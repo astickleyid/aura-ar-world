@@ -142,7 +142,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'DM
   <div id="cw"><div id="ci"><div id="cs"></div><div class="caret"></div></div></div>
   <div class="cst L"><div class="cl">Heading</div><div class="cv" id="v-hdg">---</div></div>
   <div class="cst R"><div class="cl">Targets</div><div class="cv" id="v-anc">0</div></div>
-  <div id="ret"><div style="position:relative;width:52px;height:52px"><div class="ri r1"></div><div class="ri r2"></div><div class="rdot"></div><div class="rt rh"></div><div class="rt rh2"></div><div class="rt rv"></div><div class="rt rv2"></div></div></div>
+  <div id="ret" style="pointer-events:all;cursor:crosshair" onclick="openTagDialog()" title="Tap to tag location"><div style="position:relative;width:52px;height:52px"><div class="ri r1"></div><div class="ri r2"></div><div class="rdot"></div><div class="rt rh"></div><div class="rt rh2"></div><div class="rt rv"></div><div class="rt rv2"></div></div></div>
   <div id="anc-layer"></div>
 </div>
 <div id="speed-cluster">
@@ -188,6 +188,7 @@ async function boot(){
     const v=document.getElementById('cam');v.srcObject=stream;
     await new Promise(r=>{v.onloadedmetadata=()=>{v.play();r()}});
     ss('s1','ok','Back camera active');
+    getRealFocalLength(stream);
   }catch(e){ss('s1','err','No camera - skyline mode');document.getElementById('cam').style.display='none';document.getElementById('fallback').style.display='block'}
   sp(18);
   ss('s2','run');
@@ -206,7 +207,8 @@ async function boot(){
   sp(55);
   ss('s4','run');
   try{places=await fetchPlaces(uLat,uLon);if(!places.length)throw 0;ss('s4','ok',places.length+' targets acquired')}catch(e){places=getMock();ss('s4','err',places.length+' demo targets')}
-  buildAnchors();sp(75);
+  buildAnchors();
+  fetchUserAnchors();sp(75);
   ss('s5','run');initSensors();await dl(500);ss('s5','ok',hasSensor?'Gyro active':'Drag mode');sp(100);
   await dl(700);
   const b=document.getElementById('boot');b.style.transition='opacity .8s';b.style.opacity='0';
@@ -247,18 +249,25 @@ function updateWx(){
 }
 
 async function fetchPlaces(lat,lon){
-  const R=300,q='[out:json][timeout:14];(node[amenity~"restaurant|cafe|bar|bank|pharmacy|hospital|cinema|hotel|fast_food|fuel|supermarket|pub|police|fire_station|library|nightclub|atm"](around:'+R+','+lat+','+lon+');node[shop~"convenience|clothes|electronics|bakery|bookshop"](around:'+R+','+lat+','+lon+');node[tourism~"attraction|museum|viewpoint|artwork|gallery"](around:'+R+','+lat+','+lon+');node[leisure~"park|fitness_centre|playground"](around:'+R+','+lat+','+lon+');node[historic~"monument|memorial|castle"](around:'+R+','+lat+','+lon+');node["man_made"="surveillance"](around:'+R+','+lat+','+lon+');node["highway"="speed_camera"](around:'+R+','+lat+','+lon+');node["highway"="traffic_signals"](around:'+R+','+lat+','+lon+');node["amenity"="parking"](around:'+R+','+lat+','+lon+');)->.r;.r out body;';
+  // Try backend API (cached, speed-aware radius) first
+  try {
+    const r = await fetch('/api/places?lat='+lat+'&lon='+lon+'&speed='+Math.round(speedMph));
+    if (!r.ok) throw new Error('api '+r.status);
+    const d = await r.json();
+    if (d.places && d.places.length) {
+      return processElements(d.places, lat, lon);
+    }
+  } catch(e) { /* fall through to direct */ }
+
+  // Direct Overpass fallback
+  const R=osmRadius();
+  const q='[out:json][timeout:14];(node[amenity~"restaurant|cafe|bar|bank|pharmacy|hospital|cinema|hotel|fast_food|fuel|supermarket|pub|police|fire_station|library|nightclub|atm"](around:'+R+','+lat+','+lon+');node["man_made"="surveillance"](around:'+R+','+lat+','+lon+');node["highway"="speed_camera"](around:'+R+','+lat+','+lon+');node["highway"="traffic_signals"](around:'+R+','+lat+','+lon+');node[tourism~"attraction|museum|viewpoint"](around:'+R+','+lat+','+lon+');node[leisure~"park|fitness_centre"](around:'+R+','+lat+','+lon+');)->.r;.r out body;';
   const resp=await fetch('https://overpass-api.de/api/interpreter',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(q)});
   const data=await resp.json();
-  return(data.elements||[]).slice(0,18).map(e=>{
-    const tags=e.tags||{};
-    const type=tags.amenity||tags.shop||tags.tourism||tags.leisure||tags.historic||tags.man_made||tags.highway||'place';
-    const name=tags.name||autoName(type,tags);
-    if(!name)return null;
-    const{ico,cls,cat,pri}=clsT(type,tags);
-    return{id:'osm_'+e.id,name,type,ico,cls,cat,pri,lat:e.lat,lon:e.lon,dist:hav(lat,lon,e.lat,e.lon),bearing:brg(lat,lon,e.lat,e.lon),elev:3+Math.random()*16,tags};
-  }).filter(Boolean).sort((a,b)=>a.pri-b.pri||a.dist-b.dist);
+  return processElements(data.elements||[], lat, lon);
 }
+
+function processElements(elements, lat, lon){
 function autoName(t,tags){const m={surveillance:'CCTV Camera',speed_camera:'Speed Camera',traffic_signals:'Traffic Light',parking:'Parking',police:'Police',fire_station:'Fire Station'};if(tags['surveillance:type'])return tags['surveillance:type'].toUpperCase()+' Cam';return m[t]||null}
 function clsT(t,tags){
   if(t==='surveillance'||t==='speed_camera'||tags['man_made']==='surveillance')return{ico:'📷',cls:'vr',cat:'SURVEILLANCE',pri:1};
@@ -320,44 +329,185 @@ function updateAnchors(){
   document.getElementById('v-anc').textContent=vis;
 }
 
-// ═══════════════════════════════════════════
-// REAL OBJECT DETECTION — TensorFlow.js COCO-SSD
-// Detects 80 object classes from actual camera frames
-// ═══════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════
+// REAL OBJECT DETECTION + CENTROID TRACKER
+// TensorFlow.js COCO-SSD — 80 classes, runs at 6fps
+// IoU-based centroid tracker — stable boxes, velocity estimation
+// ═══════════════════════════════════════════════════════════
 let detModel = null;
 let detRunning = false;
 let detCanvas = null;
 let detCtx = null;
-let detAnimId = null;
 
-// COCO-SSD class colors — group by category
-const CLASS_COLORS = {
-  // Vehicles → orange
-  car:'#FF9030',truck:'#FF9030',bus:'#FF9030',motorcycle:'#FF9030',bicycle:'#FFD700',
-  // People → red
-  person:'#FF4040',
-  // Animals → yellow
-  dog:'#FFD700',cat:'#FFD700',bird:'#FFD700',horse:'#FFD700',cow:'#FFD700',
-  sheep:'#FFD700',elephant:'#FFD700',bear:'#FFD700',zebra:'#FFD700',giraffe:'#FFD700',
-  // Electronics → cyan
-  laptop:'#00FFD1',cell_phone:'#00FFD1',tv:'#00FFD1',keyboard:'#00FFD1',mouse:'#00FFD1',
-  remote:'#00FFD1',microwave:'#00FFD1',oven:'#00FFD1',
-  // Sports
-  sports_ball:'#4FC3F7',frisbee:'#4FC3F7',skis:'#4FC3F7',snowboard:'#4FC3F7',
-  // Food
-  bottle:'#00FFD1',wine_glass:'#00FFD1',cup:'#00FFD1',fork:'#00FFD1',knife:'#00FFD1',
-  spoon:'#00FFD1',bowl:'#00FFD1',banana:'#00FFD1',apple:'#00FFD1',pizza:'#00FFD1',
-  // Furniture
-  chair:'#4FC3F7',couch:'#4FC3F7',bed:'#4FC3F7',dining_table:'#4FC3F7',toilet:'#4FC3F7',
-  // Default
-  _default:'#00FFD1'
+// ── Centroid Tracker ──────────────────────────────────────
+// Matches detections across frames by IoU overlap.
+// Gives each object a stable ID, tracks position history,
+// and estimates velocity (px/frame) for direction arrows.
+const tracker = {
+  nextId: 1,
+  objects: new Map(), // id -> {bbox, cls, score, age, history, velocity, fadeAlpha}
+  maxDisappeared: 8,  // frames before an object is dropped
+  minIoU: 0.25,
+
+  iou(a, b) {
+    const [ax,ay,aw,ah] = a, [bx,by,bw,bh] = b;
+    const ix = Math.max(0, Math.min(ax+aw,bx+bw) - Math.max(ax,bx));
+    const iy = Math.max(0, Math.min(ay+ah,by+bh) - Math.max(ay,by));
+    const inter = ix * iy;
+    return inter / (aw*ah + bw*bh - inter + 1e-6);
+  },
+
+  update(detections) {
+    // Increment age on all existing objects
+    for (const obj of this.objects.values()) {
+      obj.disappeared++;
+      obj.fadeAlpha = Math.max(0, 1 - obj.disappeared / this.maxDisappeared);
+    }
+
+    if (!detections.length) {
+      // Drop fully faded objects
+      for (const [id, obj] of this.objects) {
+        if (obj.disappeared >= this.maxDisappeared) this.objects.delete(id);
+      }
+      return [];
+    }
+
+    const existingIds = [...this.objects.keys()];
+
+    if (!existingIds.length) {
+      // No existing objects — register all detections
+      for (const d of detections) this._register(d);
+    } else {
+      // Build IoU matrix: existing x new detections
+      const used = new Set();
+      const matched = new Set();
+
+      for (const id of existingIds) {
+        const obj = this.objects.get(id);
+        let bestIoU = this.minIoU, bestIdx = -1;
+        for (let i = 0; i < detections.length; i++) {
+          if (used.has(i)) continue;
+          // Only match same class or adjacent (e.g. car/truck)
+          const sameClass = obj.cls === detections[i].class ||
+            (VEHICLE_CLASSES.has(obj.cls) && VEHICLE_CLASSES.has(detections[i].class));
+          if (!sameClass) continue;
+          const iou = this.iou(obj.bbox, detections[i].bbox);
+          if (iou > bestIoU) { bestIoU = iou; bestIdx = i; }
+        }
+        if (bestIdx >= 0) {
+          used.add(bestIdx);
+          matched.add(id);
+          const d = detections[bestIdx];
+          // Smooth bbox with exponential moving average (reduces jitter)
+          const alpha = 0.45;
+          const old = obj.bbox;
+          const nb = d.bbox;
+          const smoothed = [
+            old[0]*alpha + nb[0]*(1-alpha),
+            old[1]*alpha + nb[1]*(1-alpha),
+            old[2]*alpha + nb[2]*(1-alpha),
+            old[3]*alpha + nb[3]*(1-alpha),
+          ];
+          // Velocity = current center minus previous center
+          const cx = smoothed[0]+smoothed[2]/2, cy = smoothed[1]+smoothed[3]/2;
+          const pcx = old[0]+old[2]/2, pcy = old[1]+old[3]/2;
+          obj.velocity = { vx: cx-pcx, vy: cy-pcy };
+          obj.history.push([cx,cy]);
+          if (obj.history.length > 12) obj.history.shift();
+          obj.bbox = smoothed;
+          obj.score = d.score;
+          obj.disappeared = 0;
+          obj.fadeAlpha = 1;
+          obj.age++;
+        }
+      }
+
+      // Register unmatched detections as new objects
+      for (let i = 0; i < detections.length; i++) {
+        if (!used.has(i)) this._register(detections[i]);
+      }
+
+      // Drop disappeared objects
+      for (const [id, obj] of this.objects) {
+        if (obj.disappeared >= this.maxDisappeared) this.objects.delete(id);
+      }
+    }
+
+    return [...this.objects.values()];
+  },
+
+  _register(d) {
+    const [bx,by,bw,bh] = d.bbox;
+    this.objects.set(this.nextId++, {
+      id: this.nextId - 1,
+      cls: d.class,
+      score: d.score,
+      bbox: d.bbox,
+      age: 1,
+      disappeared: 0,
+      fadeAlpha: 0.4, // fade in
+      history: [[bx+bw/2, by+bh/2]],
+      velocity: { vx: 0, vy: 0 }
+    });
+  }
 };
 
-const VEHICLE_CLASSES = new Set(['car','truck','bus','motorcycle','bicycle','train','airplane','boat']);
+const CLASS_COLORS = {
+  car:'#FF9030',truck:'#FF9030',bus:'#FF9030',motorcycle:'#FF9030',bicycle:'#FFD700',
+  person:'#FF4040',
+  dog:'#FFD700',cat:'#FFD700',bird:'#FFD700',
+  laptop:'#00FFD1',cell_phone:'#00FFD1',tv:'#00FFD1',keyboard:'#00FFD1',
+  bottle:'#00FFD1',cup:'#00FFD1',chair:'#4FC3F7',couch:'#4FC3F7',
+  backpack:'#4FC3F7',handbag:'#4FC3F7',suitcase:'#4FC3F7',
+  _default:'#00FFD1'
+};
+const VEHICLE_CLASSES = new Set(['car','truck','bus','motorcycle','bicycle','train','boat']);
 
-function getColor(cls) {
-  return CLASS_COLORS[cls.replace(/ /g,'_')] || CLASS_COLORS._default;
+function getColor(cls){ return CLASS_COLORS[cls.replace(/ /g,'_')]||CLASS_COLORS._default }
+
+// Real focal length from camera — makes distance estimates accurate
+let focalLengthPx = null;
+async function getRealFocalLength(stream) {
+  try {
+    const track = stream.getVideoTracks()[0];
+    const caps = track.getCapabilities ? track.getCapabilities() : {};
+    const settings = track.getSettings ? track.getSettings() : {};
+    // Some browsers expose focalLength in mm and sensor size
+    // We derive focal length in pixels using: f_px = f_mm * (imageWidth / sensorWidth_mm)
+    if (caps.focalLength && settings.focalLength && caps.zoom) {
+      // focal length available — convert to pixels
+      const imgW = settings.width || window.innerWidth;
+      // Standard phone sensor width ~6mm (varies, but this gets us to ±10%)
+      const SENSOR_W_MM = 6.0;
+      focalLengthPx = settings.focalLength * (imgW / SENSOR_W_MM);
+    } else {
+      // Fallback: estimate from FOV
+      // f = (w/2) / tan(hfov/2)
+      const imgW = settings.width || window.innerWidth;
+      const fovRad = (FOV_H * Math.PI) / 180;
+      focalLengthPx = (imgW / 2) / Math.tan(fovRad / 2);
+    }
+  } catch(e) {
+    const fovRad = (FOV_H * Math.PI) / 180;
+    focalLengthPx = (window.innerWidth / 2) / Math.tan(fovRad / 2);
+  }
 }
+
+function estimateDistM(bboxWidthPx, realWidthM, canvasW, videoW) {
+  if (!focalLengthPx) return null;
+  // Scale focal length to canvas coords
+  const scale = canvasW / (videoW || canvasW);
+  const f = focalLengthPx * scale;
+  const dist = (realWidthM * f) / bboxWidthPx;
+  return dist;
+}
+
+// Real widths for common objects (meters)
+const REAL_WIDTHS = {
+  car: 1.9, truck: 2.5, bus: 2.6, motorcycle: 0.8, bicycle: 0.6,
+  person: 0.5, dog: 0.4, cat: 0.25,
+  laptop: 0.35, tv: 1.2, chair: 0.5,
+};
 
 async function initDetection() {
   detCanvas = document.getElementById('det-canvas');
@@ -368,13 +518,18 @@ async function initDetection() {
 
   try {
     showToast('Loading vision model...');
-    // Load COCO-SSD — detects 80 object classes
-    detModel = await cocoSsd.load({ base: 'mobilenet_v2' });
-    showToast('Vision system online — detecting objects');
+    detModel = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
+    showToast('Vision system online');
     startDetectionLoop();
   } catch(e) {
-    console.warn('TF.js detection failed to load:', e);
-    showToast('Vision system unavailable');
+    // Try full model as fallback
+    try {
+      detModel = await cocoSsd.load({ base: 'mobilenet_v2' });
+      showToast('Vision system online (full model)');
+      startDetectionLoop();
+    } catch(e2) {
+      showToast('Vision unavailable — check browser support');
+    }
   }
 }
 
@@ -388,130 +543,158 @@ function startDetectionLoop() {
   if (detRunning) return;
   detRunning = true;
   let lastRun = 0;
-  const FPS = 6; // Run detection at 6fps — balanced between responsiveness and battery
-
+  const FPS = 6;
   const camEl = document.getElementById('cam');
 
   async function detectFrame(ts) {
-    detAnimId = requestAnimationFrame(detectFrame);
+    requestAnimationFrame(detectFrame);
     if (ts - lastRun < 1000/FPS) return;
     lastRun = ts;
-
     if (!detModel || !camEl || camEl.readyState < 2) return;
-
     try {
       const preds = await detModel.detect(camEl);
-      drawDetections(preds, camEl.videoWidth, camEl.videoHeight);
-    } catch(e) {
-      // Silent fail — model may be busy
-    }
+      // Filter low confidence before passing to tracker
+      const filtered = preds.filter(p => p.score >= 0.32);
+      const tracked = tracker.update(filtered);
+      drawTracked(tracked, camEl.videoWidth, camEl.videoHeight);
+    } catch(e) { /* busy */ }
   }
   requestAnimationFrame(detectFrame);
 }
 
-function drawDetections(preds, vw, vh) {
+function drawTracked(objects, vw, vh) {
   if (!detCtx || !detCanvas) return;
   const cw = detCanvas.width, ch = detCanvas.height;
   detCtx.clearRect(0, 0, cw, ch);
+  if (!objects || !objects.length) return;
 
-  if (!preds || !preds.length) return;
-
-  // Scale factors from video coords to canvas coords
   const scaleX = cw / (vw || cw);
   const scaleY = ch / (vh || ch);
 
-  preds.forEach(pred => {
-    const { class: cls, score, bbox } = pred;
-    if (score < 0.35) return; // Skip low confidence
+  objects.forEach(obj => {
+    const { cls, score, bbox, fadeAlpha, age, history, velocity, id } = obj;
+    if (fadeAlpha < 0.05) return;
 
-    const [bx, by, bw, bh] = bbox;
-    const x = bx * scaleX;
-    const y = by * scaleY;
-    const w = bw * scaleX;
-    const h = bh * scaleY;
+    const [bx,by,bw,bh] = bbox;
+    const x = bx*scaleX, y = by*scaleY, w = bw*scaleX, h = bh*scaleY;
     const color = getColor(cls);
     const isVehicle = VEHICLE_CLASSES.has(cls);
 
+    // Global alpha for fade in/out
+    detCtx.globalAlpha = Math.min(1, fadeAlpha * (age > 3 ? 1 : age/3));
+
     // Box
     detCtx.strokeStyle = color;
-    detCtx.lineWidth = isVehicle ? 2 : 1.5;
+    detCtx.lineWidth = isVehicle ? 1.5 : 1;
     detCtx.shadowColor = color;
-    detCtx.shadowBlur = 8;
+    detCtx.shadowBlur = age > 2 ? 8 : 3; // glow intensifies as object stabilizes
     detCtx.strokeRect(x, y, w, h);
     detCtx.shadowBlur = 0;
 
-    // Corner ticks (Iron Man style)
-    const tick = Math.min(w, h) * 0.18;
-    detCtx.lineWidth = isVehicle ? 2.5 : 2;
+    // Corner ticks
+    const tick = Math.min(w, h) * 0.2;
+    detCtx.lineWidth = isVehicle ? 2 : 1.5;
     detCtx.strokeStyle = color;
     detCtx.beginPath();
-    // TL
-    detCtx.moveTo(x, y + tick); detCtx.lineTo(x, y); detCtx.lineTo(x + tick, y);
-    // TR
-    detCtx.moveTo(x + w - tick, y); detCtx.lineTo(x + w, y); detCtx.lineTo(x + w, y + tick);
-    // BL
-    detCtx.moveTo(x, y + h - tick); detCtx.lineTo(x, y + h); detCtx.lineTo(x + tick, y + h);
-    // BR
-    detCtx.moveTo(x + w - tick, y + h); detCtx.lineTo(x + w, y + h); detCtx.lineTo(x + w, y + h - tick);
+    detCtx.moveTo(x,y+tick); detCtx.lineTo(x,y); detCtx.lineTo(x+tick,y);
+    detCtx.moveTo(x+w-tick,y); detCtx.lineTo(x+w,y); detCtx.lineTo(x+w,y+tick);
+    detCtx.moveTo(x,y+h-tick); detCtx.lineTo(x,y+h); detCtx.lineTo(x+tick,y+h);
+    detCtx.moveTo(x+w-tick,y+h); detCtx.lineTo(x+w,y+h); detCtx.lineTo(x+w,y+h-tick);
     detCtx.stroke();
 
-    // Label background
+    // Motion trail (history of center points)
+    if (history.length > 2 && (Math.abs(velocity.vx) > 0.8 || Math.abs(velocity.vy) > 0.8)) {
+      detCtx.beginPath();
+      detCtx.strokeStyle = color;
+      detCtx.lineWidth = 1;
+      detCtx.globalAlpha *= 0.4;
+      for (let i = 0; i < history.length; i++) {
+        const [hx, hy] = history[i];
+        const sx = hx * scaleX, sy = hy * scaleY;
+        i === 0 ? detCtx.moveTo(sx, sy) : detCtx.lineTo(sx, sy);
+      }
+      detCtx.stroke();
+      detCtx.globalAlpha = Math.min(1, fadeAlpha * (age > 3 ? 1 : age/3));
+    }
+
+    // Velocity arrow
+    const speed_px = Math.sqrt(velocity.vx**2 + velocity.vy**2);
+    if (speed_px > 1.2) {
+      const cx = x+w/2, cy = y+h/2;
+      const arrowLen = Math.min(speed_px * 8, 50);
+      const angle = Math.atan2(velocity.vy, velocity.vx);
+      detCtx.beginPath();
+      detCtx.strokeStyle = color;
+      detCtx.lineWidth = 1.5;
+      detCtx.globalAlpha *= 0.7;
+      detCtx.moveTo(cx, cy);
+      detCtx.lineTo(cx + Math.cos(angle)*arrowLen, cy + Math.sin(angle)*arrowLen);
+      detCtx.stroke();
+      detCtx.globalAlpha = Math.min(1, fadeAlpha * (age > 3 ? 1 : age/3));
+    }
+
+    // Label
     const pct = Math.round(score * 100);
-    const label = score >= 0.75 ? cls : score >= 0.50 ? cls + '?' : 'object?';
-    const displayLabel = label.replace(/_/g, ' ').toUpperCase();
-    const spdLabel = isVehicle ? '  ~' + estimateVehicleDistM(w, cw) + 'm' : '';
-    const fullLabel = displayLabel + '  ' + pct + '%' + spdLabel;
+    const confLabel = score >= 0.72 ? cls : score >= 0.48 ? cls+'?' : 'object?';
+    const displayCls = confLabel.replace(/_/g,' ').toUpperCase();
 
-    detCtx.font = '600 10px "DM Mono", monospace';
-    const textW = detCtx.measureText(fullLabel).width;
-    const labelY = y > 22 ? y - 6 : y + h + 16;
+    // Distance estimate
+    let distLabel = '';
+    const realW = REAL_WIDTHS[cls];
+    if (realW) {
+      const distM = estimateDistM(bw, realW, cw, vw);
+      if (distM) {
+        const d = Math.round(distM);
+        distLabel = d < 5 ? ' CLOSE' : d > 150 ? ' >150m' : ' ~'+d+'m';
+      }
+    }
 
-    detCtx.fillStyle = 'rgba(0,2,10,0.72)';
-    detCtx.fillRect(x, labelY - 12, textW + 10, 15);
+    // ID badge (helps you see same object tracked across frames)
+    const idLabel = age > 2 ? ' #'+id : '';
+    const fullLabel = displayCls + ' ' + pct + '%' + distLabel + idLabel;
+
+    detCtx.font = '600 9px "DM Mono", monospace';
+    const tw = detCtx.measureText(fullLabel).width;
+    const ly = y > 22 ? y - 5 : y + h + 15;
+
+    detCtx.globalAlpha *= 0.9;
+    detCtx.fillStyle = 'rgba(0,2,10,0.78)';
+    detCtx.fillRect(x-1, ly-12, tw+10, 15);
+    detCtx.globalAlpha = Math.min(1, fadeAlpha * (age > 3 ? 1 : age/3));
 
     detCtx.fillStyle = color;
     detCtx.shadowColor = color;
-    detCtx.shadowBlur = 6;
-    detCtx.fillText(fullLabel, x + 5, labelY);
+    detCtx.shadowBlur = 5;
+    detCtx.fillText(fullLabel, x+4, ly);
     detCtx.shadowBlur = 0;
-
-    // Center dot
-    detCtx.beginPath();
-    detCtx.arc(x + w/2, y + h/2, 2, 0, Math.PI * 2);
-    detCtx.fillStyle = color;
-    detCtx.fill();
+    detCtx.globalAlpha = 1;
   });
 }
 
-// Rough distance estimate for vehicles based on apparent box width
-// A car is ~2m wide. Using apparent pixel width vs known width.
-// Very rough — good enough for relative "near / far" display
-function estimateVehicleDistM(bboxWidthPx, canvasWidthPx) {
-  const CAR_REAL_WIDTH_M = 2.0;
-  const FOV_H_RAD = (FOV_H * Math.PI) / 180;
-  const focalPx = canvasWidthPx / (2 * Math.tan(FOV_H_RAD / 2));
-  const dist = (CAR_REAL_WIDTH_M * focalPx) / bboxWidthPx;
-  if (dist < 5) return '<5';
-  if (dist > 200) return '>200';
-  return Math.round(dist);
-}
-
-// ── TRAFFIC API ──────────────────────────────────────────────────────────────
+// ── TRAFFIC API + SPEED DELTA ────────────────────────────────────────────────
+let trafficData = null;
 let trafficPollTimer = null;
+let lastTrafficLat = null, lastTrafficLon = null;
 
 async function startTrafficPolling() {
-  pollTraffic(); // immediate
-  trafficPollTimer = setInterval(pollTraffic, 30000); // every 30s
+  pollTraffic();
+  trafficPollTimer = setInterval(() => {
+    // Only re-poll if moved >50m since last poll (saves API calls)
+    if (lastTrafficLat === null ||
+        hav(lastTrafficLat, lastTrafficLon, uLat, uLon) > 50) {
+      pollTraffic();
+    }
+  }, 15000);
 }
 
 async function pollTraffic() {
   try {
-    const r = await fetch('/api/traffic?lat=' + uLat + '&lon=' + uLon);
+    const r = await fetch('/api/traffic?lat='+uLat+'&lon='+uLon);
     const data = await r.json();
+    trafficData = data;
+    lastTrafficLat = uLat; lastTrafficLon = uLon;
     updateTrafficUI(data);
-  } catch(e) {
-    // Silent — traffic is supplemental
-  }
+  } catch(e) { /* silent */ }
 }
 
 function updateTrafficUI(data) {
@@ -522,22 +705,147 @@ function updateTrafficUI(data) {
   const spd = document.getElementById('ts-speed');
   const road = document.getElementById('ts-road');
   const limit = document.getElementById('ts-limit');
+  const delta = document.getElementById('ts-delta');
 
   if (data.currentSpeedMph != null) {
     spd.textContent = data.currentSpeedMph;
-    // Color: green if flowing, orange if slow, red if jammed
-    const ratio = data.freeFlowSpeedMph ? data.currentSpeedMph / data.freeFlowSpeedMph : 1;
-    spd.style.color = ratio > 0.8 ? '#00FFD1' : ratio > 0.5 ? '#FF9030' : '#FF4040';
-    spd.style.textShadow = `0 0 14px ${spd.style.color}80`;
+    const ratio = data.freeFlowSpeedMph
+      ? data.currentSpeedMph / data.freeFlowSpeedMph : 1;
+    const tColor = ratio > 0.8 ? '#00FFD1' : ratio > 0.5 ? '#FF9030' : '#FF4040';
+    spd.style.color = tColor;
+    spd.style.textShadow = '0 0 14px '+tColor+'80';
+
+    // Speed delta — you vs traffic flow
+    if (delta) {
+      const diff = Math.round(speedMph - data.currentSpeedMph);
+      if (Math.abs(diff) >= 3) {
+        const sign = diff > 0 ? '+' : '';
+        delta.textContent = 'YOU '+sign+diff+' vs FLOW';
+        delta.style.color = diff > 10 ? '#FF4040'
+          : diff > 0 ? '#FF9030'
+          : '#00FFD1';
+      } else {
+        delta.textContent = 'WITH FLOW';
+        delta.style.color = '#00FFD1';
+      }
+      delta.style.display = 'block';
+    }
   }
+
   if (data.roadName) road.textContent = data.roadName.toUpperCase();
+
   if (data.speedLimitMph) {
-    limit.textContent = 'LIMIT: ' + data.speedLimitMph + ' mph' +
-      (data.congestion ? ' · CONGESTION' : '');
-    limit.style.color = data.congestion ? '#FF4040' : 'rgba(255,144,48,.5)';
+    const overLimit = speedMph > data.speedLimitMph + 5;
+    limit.textContent = 'LIMIT '+data.speedLimitMph+'mph'+(data.congestion?' · JAM':'');
+    limit.style.color = overLimit ? '#FF4040' : data.congestion ? '#FF4040' : 'rgba(255,144,48,.5)';
   } else {
-    limit.textContent = data.source === 'demo' ? 'DEMO MODE — add TomTom key' : '';
+    limit.textContent = data.source === 'demo' ? 'ADD TOMTOM KEY' : '';
   }
+}
+
+// ── SMART OSM RE-QUERY ───────────────────────────────────────────────────────
+// Radius scales with speed, re-queries when you've moved enough
+let lastOsmLat = null, lastOsmLon = null;
+
+function osmRadius() {
+  if (speedMph < 5) return 150;       // walking
+  if (speedMph < 20) return 250;      // cycling / slow drive
+  if (speedMph < 50) return 450;      // city driving
+  if (speedMph < 80) return 750;      // highway
+  return 1200;                         // fast highway
+}
+
+function shouldRequery() {
+  if (lastOsmLat === null) return true;
+  const moved = hav(lastOsmLat, lastOsmLon, uLat, uLon);
+  const threshold = osmRadius() * 0.4; // re-query when moved 40% of radius
+  return moved > threshold;
+}
+
+async function smartOsmUpdate() {
+  if (!shouldRequery()) return;
+  try {
+    const newPlaces = await fetchPlaces(uLat, uLon);
+    if (newPlaces.length) {
+      places = newPlaces;
+      lastOsmLat = uLat; lastOsmLon = uLon;
+      buildAnchors();
+      document.getElementById('v-anc').textContent = '↻';
+      setTimeout(() => document.getElementById('v-anc').textContent = places.length, 1200);
+    }
+  } catch(e) { /* keep existing anchors */ }
+}
+
+
+// ── USER ANCHORS (Vercel KV) ─────────────────────────────────────────────
+let userAnchors = [];
+let myUserId = localStorage.getItem('aura_uid') || (() => {
+  const id = Math.random().toString(36).slice(2);
+  localStorage.setItem('aura_uid', id);
+  return id;
+})();
+
+async function fetchUserAnchors() {
+  try {
+    const r = await fetch('/api/anchors?lat='+uLat+'&lon='+uLon);
+    const d = await r.json();
+    userAnchors = d.anchors || [];
+    if (userAnchors.length) addUserAnchorNodes();
+  } catch(e) { /* KV not set up yet */ }
+}
+
+function addUserAnchorNodes() {
+  const layer = document.getElementById('anc-layer');
+  userAnchors.forEach(a => {
+    if (document.getElementById('an-ua-'+a.id)) return; // already added
+    const dist = hav(uLat,uLon,a.lat,a.lon);
+    const ds = dist >= 1000 ? (dist/1000).toFixed(1)+'km' : dist+'m';
+    mkAnc(layer, {
+      id: 'ua-'+a.id, bearing: brg(uLat,uLon,a.lat,a.lon),
+      elev: 10, cls: 'vb', w: '155px', stem: 60, sh: '0s',
+      lat: a.lat, lon: a.lon,
+      ico: a.icon || '📍', cat: 'USER TAG',
+      val: a.label.length > 14 ? a.label.slice(0,13)+'…' : a.label,
+      sub: 'Tagged by community · '+ds, dist: ds,
+      detail: { ico: a.icon||'📍', type: 'Community Anchor · AURA',
+        title: a.label,
+        stats: [{v:ds,l:'Distance'},{v:new Date(a.created).toLocaleDateString(),l:'Tagged'},{v:'Community',l:'Source'}],
+        desc: 'Community-tagged location. '+(a.label)+' at '+ds+' from your position.' }
+    });
+  });
+}
+
+async function tagHere(label, icon) {
+  try {
+    const r = await fetch('/api/anchors', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lat: uLat, lon: uLon, label, icon: icon||'📍', userId: myUserId })
+    });
+    const d = await r.json();
+    if (d.ok) {
+      showToast('Tagged: '+label);
+      fetchUserAnchors();
+    }
+  } catch(e) { showToast('Tag failed — check connection'); }
+}
+
+// Tag popup — launched from the center reticle tap
+function openTagDialog() {
+  const labels = ['Here!','Meet here','Watch out','Road closed','Police ahead','Good food','Landmark'];
+  const icons =  ['📍','👋','⚠️','🚧','🚔','🍔','⭐'];
+  document.getElementById('p-ico').textContent = '📍';
+  document.getElementById('p-type').textContent = 'Drop Anchor · Community';
+  document.getElementById('p-title').textContent = 'Tag This Location';
+  document.getElementById('p-body').innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px">
+      ${labels.map((l,i)=>`<button onclick="tagHere('${l}','${icons[i]}');closePopup()" style="background:rgba(79,195,247,.07);border:1px solid rgba(79,195,247,.25);border-radius:9px;padding:10px 6px;font-family:'DM Mono',monospace;font-size:9px;color:#4FC3F7;cursor:pointer;letter-spacing:.06em">${icons[i]} ${l}</button>`).join('')}
+    </div>
+    <div style="display:flex;gap:8px">
+      <input id="custom-tag" placeholder="Custom label..." style="flex:1;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:9px 12px;font-family:'DM Mono',monospace;font-size:11px;color:#fff;outline:none" maxlength="60">
+      <button onclick="const v=document.getElementById('custom-tag').value.trim();if(v){tagHere(v,'📍');closePopup()}" style="background:rgba(0,255,209,.07);border:1px solid rgba(0,255,209,.27);border-radius:8px;padding:9px 14px;font-family:'Orbitron',monospace;font-size:9px;color:#00FFD1;cursor:pointer">TAG</button>
+    </div>`;
+  document.getElementById('popup').classList.add('on');
 }
 
 function initMovingTargets(){
@@ -629,6 +937,7 @@ function startLoop(){
     smoothP+=(pitch-smoothP)*0.12;
     updateAnchors();updateMovingTargets();
     if(frame%3===0){updateCompass();drawRadar();updateSpeedUI()}
+    if(frame%600===0){ smartOsmUpdate(); } // check every ~10s
     if(frame%60===0){const n=new Date(),h=n.getHours(),m=n.getMinutes().toString().padStart(2,'0');document.getElementById('v-time').textContent=(h>12?h-12:h||12)+':'+m;document.getElementById('v-pitch').textContent=(smoothP>=0?'+':'')+Math.round(smoothP)}
   })();
 }
@@ -644,6 +953,7 @@ boot();
     <div style="font-size:8px;letter-spacing:.12em;color:rgba(0,255,209,.4)">mph traffic</div>
   </div>
   <div id="ts-limit" style="font-size:7px;letter-spacing:.1em;color:rgba(255,144,48,.5);margin-top:2px"></div>
+  <div id="ts-delta" style="display:none;font-size:8px;letter-spacing:.1em;font-family:'Orbitron',monospace;font-weight:700;margin-top:4px"></div>
 </div>
 </body>
 </html>
