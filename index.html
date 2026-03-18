@@ -125,6 +125,9 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'DM
 .bbar{width:280px;height:2px;background:rgba(255,255,255,.05);border-radius:999px;overflow:hidden}
 .bfill{height:100%;background:linear-gradient(90deg,#7C5CFC,var(--c));width:0%;transition:width .4s ease;border-radius:999px}
 </style>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
 </head>
 <body>
 <video id="cam" autoplay muted playsinline></video>
@@ -141,7 +144,6 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'DM
   <div class="cst R"><div class="cl">Targets</div><div class="cv" id="v-anc">0</div></div>
   <div id="ret"><div style="position:relative;width:52px;height:52px"><div class="ri r1"></div><div class="ri r2"></div><div class="rdot"></div><div class="rt rh"></div><div class="rt rh2"></div><div class="rt rv"></div><div class="rt rv2"></div></div></div>
   <div id="anc-layer"></div>
-  <div id="tgt-layer"></div>
 </div>
 <div id="speed-cluster">
   <div class="spd-block" id="spd-you"><div class="spd-value" id="spd-val">0</div><div class="spd-unit">mph you</div></div>
@@ -174,7 +176,6 @@ let uLat=40.758,uLon=-73.9855,heading=0,smoothH=0,pitch=0,smoothP=0;
 let hasSensor=false,dragActive=false,lx=0,ly=0,frame=0;
 let speedMph=0,altFt=null,gpsAcc=null,prevLat=null,prevLon=null,prevTime=null;
 let weatherData={},places=[],audioCtx=null;
-const VTGTS=[];
 
 const ss=(id,st,tx)=>{const e=document.getElementById(id);e.className='bstep '+st;if(tx)e.querySelector('.bdot').nextSibling.textContent=' '+tx};
 const sp=p=>{document.getElementById('bfill').style.width=p+'%'};
@@ -319,54 +320,234 @@ function updateAnchors(){
   document.getElementById('v-anc').textContent=vis;
 }
 
-// MOVING TARGETS
-function initMovingTargets(){
-  const W=window.innerWidth,H=window.innerHeight;
-  const vehicles=[
-    {id:'v1',type:'Vehicle',emoji:'🚗',x:0.15,y:0.63,vx:0.0014,vy:0,speed:32,w:64,h:38},
-    {id:'v2',type:'SUV',emoji:'🚙',x:0.78,y:0.66,vx:-0.0011,vy:0,speed:24,w:70,h:42},
-    {id:'v3',type:'Cyclist',emoji:'🚴',x:0.48,y:0.70,vx:0.0007,vy:0,speed:11,w:40,h:50},
-  ];
-  const layer=document.getElementById('tgt-layer');
-  vehicles.forEach(v=>{
-    VTGTS.push(v);
-    const el=document.createElement('div');el.className='tbox';el.id='tb-'+v.id;
-    el.style.left=(v.x*W)+'px';el.style.top=(v.y*H)+'px';
-    el.innerHTML='<div class="tbox-frame" style="width:'+v.w+'px;height:'+v.h+'px"></div><div class="tbox-label">'+v.type+' - LOCK</div><div class="tbox-spd">'+Math.round(v.speed)+' mph</div>';
-    el.style.opacity='0';el.style.transition='opacity .6s';
-    el._v=v;
-    el.addEventListener('click',()=>openVehiclePopup(v));
-    el.addEventListener('touchend',e=>{e.preventDefault();openVehiclePopup(v)},{passive:false});
-    layer.appendChild(el);
-    setTimeout(()=>{el.style.opacity='1'},1200+Math.random()*2000);
-  });
+// ═══════════════════════════════════════════
+// REAL OBJECT DETECTION — TensorFlow.js COCO-SSD
+// Detects 80 object classes from actual camera frames
+// ═══════════════════════════════════════════
+let detModel = null;
+let detRunning = false;
+let detCanvas = null;
+let detCtx = null;
+let detAnimId = null;
+
+// COCO-SSD class colors — group by category
+const CLASS_COLORS = {
+  // Vehicles → orange
+  car:'#FF9030',truck:'#FF9030',bus:'#FF9030',motorcycle:'#FF9030',bicycle:'#FFD700',
+  // People → red
+  person:'#FF4040',
+  // Animals → yellow
+  dog:'#FFD700',cat:'#FFD700',bird:'#FFD700',horse:'#FFD700',cow:'#FFD700',
+  sheep:'#FFD700',elephant:'#FFD700',bear:'#FFD700',zebra:'#FFD700',giraffe:'#FFD700',
+  // Electronics → cyan
+  laptop:'#00FFD1',cell_phone:'#00FFD1',tv:'#00FFD1',keyboard:'#00FFD1',mouse:'#00FFD1',
+  remote:'#00FFD1',microwave:'#00FFD1',oven:'#00FFD1',
+  // Sports
+  sports_ball:'#4FC3F7',frisbee:'#4FC3F7',skis:'#4FC3F7',snowboard:'#4FC3F7',
+  // Food
+  bottle:'#00FFD1',wine_glass:'#00FFD1',cup:'#00FFD1',fork:'#00FFD1',knife:'#00FFD1',
+  spoon:'#00FFD1',bowl:'#00FFD1',banana:'#00FFD1',apple:'#00FFD1',pizza:'#00FFD1',
+  // Furniture
+  chair:'#4FC3F7',couch:'#4FC3F7',bed:'#4FC3F7',dining_table:'#4FC3F7',toilet:'#4FC3F7',
+  // Default
+  _default:'#00FFD1'
+};
+
+const VEHICLE_CLASSES = new Set(['car','truck','bus','motorcycle','bicycle','train','airplane','boat']);
+
+function getColor(cls) {
+  return CLASS_COLORS[cls.replace(/ /g,'_')] || CLASS_COLORS._default;
 }
 
-function updateMovingTargets(){
-  const W=window.innerWidth,H=window.innerHeight;
-  VTGTS.forEach(v=>{
-    v.x+=v.vx;v.y+=Math.sin(Date.now()*0.001+v.x*10)*0.00004;
-    if(v.x<-0.12)v.x=1.08;if(v.x>1.12)v.x=-0.08;
-    const inStreet=v.y>0.55&&v.y<0.80;
-    const el=document.getElementById('tb-'+v.id);
-    if(el){
-      el.style.left=(v.x*W)+'px';el.style.top=(v.y*H)+'px';
-      el.style.visibility=inStreet?'visible':'hidden';
-      if(frame%90===0){
-        v.speed+=Math.random()*6-3;v.speed=Math.max(4,Math.min(65,v.speed));
-        const sd=el.querySelector('.tbox-spd');if(sd)sd.textContent=Math.round(v.speed)+' mph';
-      }
+async function initDetection() {
+  detCanvas = document.getElementById('det-canvas');
+  if (!detCanvas) return;
+  detCtx = detCanvas.getContext('2d');
+  resizeDetCanvas();
+  window.addEventListener('resize', resizeDetCanvas);
+
+  try {
+    showToast('Loading vision model...');
+    // Load COCO-SSD — detects 80 object classes
+    detModel = await cocoSsd.load({ base: 'mobilenet_v2' });
+    showToast('Vision system online — detecting objects');
+    startDetectionLoop();
+  } catch(e) {
+    console.warn('TF.js detection failed to load:', e);
+    showToast('Vision system unavailable');
+  }
+}
+
+function resizeDetCanvas() {
+  if (!detCanvas) return;
+  detCanvas.width = window.innerWidth;
+  detCanvas.height = window.innerHeight;
+}
+
+function startDetectionLoop() {
+  if (detRunning) return;
+  detRunning = true;
+  let lastRun = 0;
+  const FPS = 6; // Run detection at 6fps — balanced between responsiveness and battery
+
+  const camEl = document.getElementById('cam');
+
+  async function detectFrame(ts) {
+    detAnimId = requestAnimationFrame(detectFrame);
+    if (ts - lastRun < 1000/FPS) return;
+    lastRun = ts;
+
+    if (!detModel || !camEl || camEl.readyState < 2) return;
+
+    try {
+      const preds = await detModel.detect(camEl);
+      drawDetections(preds, camEl.videoWidth, camEl.videoHeight);
+    } catch(e) {
+      // Silent fail — model may be busy
     }
+  }
+  requestAnimationFrame(detectFrame);
+}
+
+function drawDetections(preds, vw, vh) {
+  if (!detCtx || !detCanvas) return;
+  const cw = detCanvas.width, ch = detCanvas.height;
+  detCtx.clearRect(0, 0, cw, ch);
+
+  if (!preds || !preds.length) return;
+
+  // Scale factors from video coords to canvas coords
+  const scaleX = cw / (vw || cw);
+  const scaleY = ch / (vh || ch);
+
+  preds.forEach(pred => {
+    const { class: cls, score, bbox } = pred;
+    if (score < 0.35) return; // Skip low confidence
+
+    const [bx, by, bw, bh] = bbox;
+    const x = bx * scaleX;
+    const y = by * scaleY;
+    const w = bw * scaleX;
+    const h = bh * scaleY;
+    const color = getColor(cls);
+    const isVehicle = VEHICLE_CLASSES.has(cls);
+
+    // Box
+    detCtx.strokeStyle = color;
+    detCtx.lineWidth = isVehicle ? 2 : 1.5;
+    detCtx.shadowColor = color;
+    detCtx.shadowBlur = 8;
+    detCtx.strokeRect(x, y, w, h);
+    detCtx.shadowBlur = 0;
+
+    // Corner ticks (Iron Man style)
+    const tick = Math.min(w, h) * 0.18;
+    detCtx.lineWidth = isVehicle ? 2.5 : 2;
+    detCtx.strokeStyle = color;
+    detCtx.beginPath();
+    // TL
+    detCtx.moveTo(x, y + tick); detCtx.lineTo(x, y); detCtx.lineTo(x + tick, y);
+    // TR
+    detCtx.moveTo(x + w - tick, y); detCtx.lineTo(x + w, y); detCtx.lineTo(x + w, y + tick);
+    // BL
+    detCtx.moveTo(x, y + h - tick); detCtx.lineTo(x, y + h); detCtx.lineTo(x + tick, y + h);
+    // BR
+    detCtx.moveTo(x + w - tick, y + h); detCtx.lineTo(x + w, y + h); detCtx.lineTo(x + w, y + h - tick);
+    detCtx.stroke();
+
+    // Label background
+    const pct = Math.round(score * 100);
+    const label = score >= 0.75 ? cls : score >= 0.50 ? cls + '?' : 'object?';
+    const displayLabel = label.replace(/_/g, ' ').toUpperCase();
+    const spdLabel = isVehicle ? '  ~' + estimateVehicleDistM(w, cw) + 'm' : '';
+    const fullLabel = displayLabel + '  ' + pct + '%' + spdLabel;
+
+    detCtx.font = '600 10px "DM Mono", monospace';
+    const textW = detCtx.measureText(fullLabel).width;
+    const labelY = y > 22 ? y - 6 : y + h + 16;
+
+    detCtx.fillStyle = 'rgba(0,2,10,0.72)';
+    detCtx.fillRect(x, labelY - 12, textW + 10, 15);
+
+    detCtx.fillStyle = color;
+    detCtx.shadowColor = color;
+    detCtx.shadowBlur = 6;
+    detCtx.fillText(fullLabel, x + 5, labelY);
+    detCtx.shadowBlur = 0;
+
+    // Center dot
+    detCtx.beginPath();
+    detCtx.arc(x + w/2, y + h/2, 2, 0, Math.PI * 2);
+    detCtx.fillStyle = color;
+    detCtx.fill();
   });
 }
 
-function openVehiclePopup(v){
-  document.getElementById('p-ico').textContent=v.emoji;
-  document.getElementById('p-type').textContent='Moving Target - Vision System';
-  document.getElementById('p-title').textContent=v.type+' Detected';
-  document.getElementById('p-body').innerHTML='<div class="psg"><div class="pst"><div class="psv">'+Math.round(v.speed)+'</div><div class="psl">mph speed</div></div><div class="pst"><div class="psv">~'+Math.round(30+Math.random()*20)+'m</div><div class="psl">distance</div></div><div class="pst"><div class="psv">'+Math.round(v.x*360)+'</div><div class="psl">screen pos</div></div></div><div class="pdesc">Moving object detected via screen tracking. Real speed measurement requires computer vision (TensorFlow.js + optical flow) or V2X data. This UI shows what targeting looks like - tap Track to follow.</div><div class="pacts"><button class="pact pa" onclick="closePopup()">Track</button><button class="pact ps2" onclick="closePopup()">Dismiss</button></div>';
-  document.getElementById('popup').classList.add('on');doFlash();
+// Rough distance estimate for vehicles based on apparent box width
+// A car is ~2m wide. Using apparent pixel width vs known width.
+// Very rough — good enough for relative "near / far" display
+function estimateVehicleDistM(bboxWidthPx, canvasWidthPx) {
+  const CAR_REAL_WIDTH_M = 2.0;
+  const FOV_H_RAD = (FOV_H * Math.PI) / 180;
+  const focalPx = canvasWidthPx / (2 * Math.tan(FOV_H_RAD / 2));
+  const dist = (CAR_REAL_WIDTH_M * focalPx) / bboxWidthPx;
+  if (dist < 5) return '<5';
+  if (dist > 200) return '>200';
+  return Math.round(dist);
 }
+
+// ── TRAFFIC API ──────────────────────────────────────────────────────────────
+let trafficPollTimer = null;
+
+async function startTrafficPolling() {
+  pollTraffic(); // immediate
+  trafficPollTimer = setInterval(pollTraffic, 30000); // every 30s
+}
+
+async function pollTraffic() {
+  try {
+    const r = await fetch('/api/traffic?lat=' + uLat + '&lon=' + uLon);
+    const data = await r.json();
+    updateTrafficUI(data);
+  } catch(e) {
+    // Silent — traffic is supplemental
+  }
+}
+
+function updateTrafficUI(data) {
+  const strip = document.getElementById('traffic-strip');
+  if (!strip) return;
+  strip.style.display = 'block';
+
+  const spd = document.getElementById('ts-speed');
+  const road = document.getElementById('ts-road');
+  const limit = document.getElementById('ts-limit');
+
+  if (data.currentSpeedMph != null) {
+    spd.textContent = data.currentSpeedMph;
+    // Color: green if flowing, orange if slow, red if jammed
+    const ratio = data.freeFlowSpeedMph ? data.currentSpeedMph / data.freeFlowSpeedMph : 1;
+    spd.style.color = ratio > 0.8 ? '#00FFD1' : ratio > 0.5 ? '#FF9030' : '#FF4040';
+    spd.style.textShadow = `0 0 14px ${spd.style.color}80`;
+  }
+  if (data.roadName) road.textContent = data.roadName.toUpperCase();
+  if (data.speedLimitMph) {
+    limit.textContent = 'LIMIT: ' + data.speedLimitMph + ' mph' +
+      (data.congestion ? ' · CONGESTION' : '');
+    limit.style.color = data.congestion ? '#FF4040' : 'rgba(255,144,48,.5)';
+  } else {
+    limit.textContent = data.source === 'demo' ? 'DEMO MODE — add TomTom key' : '';
+  }
+}
+
+function initMovingTargets(){
+  // Replaced by real TF.js detection — initDetection() is called from boot
+  initDetection();
+  startTrafficPolling();
+}
+
+function updateMovingTargets(){ /* no-op — real detection runs on canvas */ }
+
 
 function openPopup(id){
   const el=document.getElementById('an-'+id);if(!el||!el._detail)return;
@@ -409,7 +590,6 @@ function drawRadar(){
     ctx.fillStyle=cl.includes('vr')?'rgba(255,64,64,'+al+')':cl.includes('vo')?'rgba(255,144,48,'+al+')':cl.includes('vy')?'rgba(255,215,0,'+al+')':cl.includes('vb')?'rgba(79,195,247,'+al+')':'rgba(0,255,209,'+al+')';
     ctx.fill();
   });
-  VTGTS.forEach(v=>{const bx=cx+(v.x-0.5)*40,by=cy+10;ctx.beginPath();ctx.arc(bx,by,3,0,Math.PI*2);ctx.fillStyle='rgba(255,200,0,.7)';ctx.fill()});
   ctx.beginPath();ctx.arc(cx,cy,3.5,0,Math.PI*2);ctx.fillStyle='#00FFD1';ctx.shadowColor='#00FFD1';ctx.shadowBlur=10;ctx.fill();ctx.shadowBlur=0;
 }
 
@@ -455,5 +635,15 @@ function startLoop(){
 
 boot();
 </script>
+
+<canvas id="det-canvas" style="position:fixed;inset:0;width:100%;height:100%;z-index:3;pointer-events:none;"></canvas>
+<div id="traffic-strip" style="display:none;position:fixed;top:0;left:0;background:rgba(0,2,10,.76);border-right:1px solid rgba(0,255,209,.12);border-bottom:1px solid rgba(0,255,209,.12);border-radius:0 0 10px 0;padding:8px 14px;backdrop-filter:blur(16px);pointer-events:none;z-index:5;text-align:left">
+  <div id="ts-road" style="font-family:'Orbitron',monospace;font-size:8px;letter-spacing:.14em;color:rgba(255,255,255,.35);margin-bottom:3px">ROAD SPEED</div>
+  <div style="display:flex;align-items:baseline;gap:5px">
+    <div id="ts-speed" style="font-family:'Orbitron',monospace;font-size:20px;font-weight:700;color:#00FFD1;text-shadow:0 0 14px rgba(0,255,209,.4)">--</div>
+    <div style="font-size:8px;letter-spacing:.12em;color:rgba(0,255,209,.4)">mph traffic</div>
+  </div>
+  <div id="ts-limit" style="font-size:7px;letter-spacing:.1em;color:rgba(255,144,48,.5);margin-top:2px"></div>
+</div>
 </body>
 </html>
