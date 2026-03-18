@@ -1,1 +1,8 @@
-{"name":"aura-ar-world","version":"4.0.0","private":true}
+{
+  "name": "aura-ar-world",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@vercel/kv": "^1.0.0"
+  }
+}
