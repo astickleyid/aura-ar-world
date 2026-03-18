@@ -378,6 +378,18 @@ async function fetchPlaces(lat,lon){
 }
 
 function processElements(elements, lat, lon){
+  return(elements).slice(0,18).map(e=>{
+    const tags=e.tags||{};
+    const type=tags.amenity||tags.shop||tags.tourism||tags.leisure||tags.historic||tags.man_made||tags.highway||'place';
+    const name=tags.name||autoName(type,tags);
+    if(!name)return null;
+    const{ico,cls,cat,pri}=clsT(type,tags);
+    return{id:'osm_'+e.id,name,type,ico,cls,cat,pri,lat:e.lat,lon:e.lon,
+      dist:hav(uLat,uLon,e.lat,e.lon),bearing:brg(uLat,uLon,e.lat,e.lon),
+      elev:3+Math.random()*16,tags};
+  }).filter(Boolean).sort((a,b)=>a.pri-b.pri||a.dist-b.dist);
+}
+
 function autoName(t,tags){const m={surveillance:'CCTV Camera',speed_camera:'Speed Camera',traffic_signals:'Traffic Light',parking:'Parking',police:'Police',fire_station:'Fire Station'};if(tags['surveillance:type'])return tags['surveillance:type'].toUpperCase()+' Cam';return m[t]||null}
 function clsT(t,tags){
   if(t==='surveillance'||t==='speed_camera'||tags['man_made']==='surveillance')return{ico:'📷',cls:'vr',cat:'SURVEILLANCE',pri:1};
