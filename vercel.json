@@ -1,6 +1,5 @@
 {
   "version": 2,
-  "name": "aura-ar-world",
   "builds": [
     {
       "src": "index.html",
@@ -28,20 +27,11 @@
         {
           "key": "Permissions-Policy",
           "value": "geolocation=*, gyroscope=*, accelerometer=*, camera=*"
-        },
-        {
-          "key": "Cross-Origin-Embedder-Policy",
-          "value": "require-corp"
-        },
-        {
-          "key": "Cross-Origin-Opener-Policy",
-          "value": "same-origin"
         }
       ]
     }
   ],
   "env": {
     "TOMTOM_KEY": "@tomtom_key"
-  },
-  "_build": "v4-full-feature-build"
+  }
 }
