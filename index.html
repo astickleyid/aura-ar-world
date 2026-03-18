@@ -124,6 +124,94 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'DM
 .bstep.ok .bdot,.bstep.err .bdot{background:currentColor}
 .bbar{width:280px;height:2px;background:rgba(255,255,255,.05);border-radius:999px;overflow:hidden}
 .bfill{height:100%;background:linear-gradient(90deg,#7C5CFC,var(--c));width:0%;transition:width .4s ease;border-radius:999px}
+
+/* ── VISION FILTER MODES ── */
+#cam.nv{filter:brightness(2.8) contrast(1.6) saturate(0) hue-rotate(100deg);background:#000}
+#cam.thermal{filter:sepia(1) saturate(8) hue-rotate(310deg) brightness(1.3) contrast(1.5)}
+#cam.em{filter:brightness(3.2) contrast(2.2) saturate(0)}
+#cam.normal{filter:none}
+#vision-mode-btn{
+  position:fixed;top:60px;right:10px;z-index:5;
+  background:rgba(0,2,10,.78);border:1px solid rgba(0,255,209,.18);
+  border-radius:8px;padding:6px 10px;cursor:pointer;
+  font-family:var(--disp);font-size:8px;letter-spacing:.1em;color:var(--c);
+  backdrop-filter:blur(14px);pointer-events:all;
+}
+/* ── SYSTEM STATUS PANEL ── */
+#sys-panel{
+  position:fixed;right:10px;top:50%;transform:translateY(-50%);
+  z-index:5;pointer-events:none;
+  display:flex;flex-direction:column;gap:5px;
+}
+.sys-row{
+  background:rgba(0,2,10,.72);border:1px solid rgba(0,255,209,.12);
+  border-radius:7px;padding:5px 10px;
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  backdrop-filter:blur(12px);min-width:110px;
+}
+.sys-lbl{font-size:7px;letter-spacing:.14em;text-transform:uppercase;color:rgba(0,255,209,.35)}
+.sys-val{font-family:var(--disp);font-size:10px;font-weight:500;color:var(--c);letter-spacing:.04em}
+.sys-val.warn{color:var(--o)}.sys-val.crit{color:var(--r)}
+/* ── VOICE UI ── */
+#voice-ring{
+  position:fixed;bottom:175px;left:50%;transform:translateX(-50%);
+  z-index:5;pointer-events:all;cursor:pointer;
+  width:48px;height:48px;border-radius:50%;
+  background:rgba(0,2,10,.78);border:1.5px solid rgba(0,255,209,.28);
+  display:flex;align-items:center;justify-content:center;
+  font-size:18px;backdrop-filter:blur(14px);
+  transition:all .2s;
+}
+#voice-ring.listening{
+  border-color:var(--r);
+  box-shadow:0 0 0 8px rgba(255,64,64,.12),0 0 30px rgba(255,64,64,.3);
+  animation:voicepulse 1s ease-in-out infinite;
+}
+@keyframes voicepulse{0%,100%{box-shadow:0 0 0 8px rgba(255,64,64,.12)}50%{box-shadow:0 0 0 16px rgba(255,64,64,.06)}}
+#voice-caption{
+  position:fixed;bottom:232px;left:50%;transform:translateX(-50%);
+  background:rgba(0,2,10,.88);border:1px solid rgba(0,255,209,.2);
+  border-radius:10px;padding:7px 16px;
+  font-size:11px;color:rgba(0,255,209,.8);letter-spacing:.06em;
+  backdrop-filter:blur(18px);z-index:5;
+  opacity:0;pointer-events:none;transition:opacity .3s;white-space:nowrap;max-width:90vw;overflow:hidden;text-overflow:ellipsis;
+}
+#voice-caption.on{opacity:1}
+/* ── INCIDENT FEED ── */
+.incident-anc .adot{border-color:#FF4040;background:rgba(255,64,64,.15);box-shadow:0 0 20px rgba(255,64,64,.5);animation:incpulse 1.5s ease infinite}
+@keyframes incpulse{0%,100%{box-shadow:0 0 12px rgba(255,64,64,.5)}50%{box-shadow:0 0 28px rgba(255,64,64,.8),0 0 55px rgba(255,64,64,.2)}}
+.incident-anc .astem{background:linear-gradient(to top,rgba(255,64,64,.6),transparent)}
+/* ── CROWD DENSITY ── */
+#crowd-badge{
+  position:fixed;top:58px;left:10px;
+  background:rgba(0,2,10,.76);border:1px solid rgba(0,255,209,.14);
+  border-radius:8px;padding:6px 12px;backdrop-filter:blur(14px);
+  pointer-events:none;z-index:5;display:none;
+}
+.crowd-count{font-family:var(--disp);font-size:14px;font-weight:700;color:var(--c);text-shadow:0 0 10px rgba(0,255,209,.4)}
+.crowd-label{font-size:7px;letter-spacing:.14em;text-transform:uppercase;color:rgba(0,255,209,.35);margin-top:1px}
+/* ── IFF TAGS on detection boxes ── */
+.iff-FRIEND .tbox-frame{border-color:#00FFD1;box-shadow:0 0 16px rgba(0,255,209,.4)}
+.iff-FOE    .tbox-frame{border-color:#FF4040;box-shadow:0 0 16px rgba(255,64,64,.5)}
+.iff-WATCH  .tbox-frame{border-color:#FF9030;box-shadow:0 0 16px rgba(255,144,48,.4)}
+/* ── ZOOM INDICATOR ── */
+#zoom-badge{
+  position:fixed;top:50%;right:10px;transform:translateY(-50%);
+  background:rgba(0,2,10,.78);border:1px solid rgba(0,255,209,.18);
+  border-radius:8px;padding:8px 12px;backdrop-filter:blur(14px);
+  pointer-events:none;z-index:5;display:none;text-align:center;
+}
+.zoom-val{font-family:var(--disp);font-size:14px;font-weight:700;color:var(--c);letter-spacing:.04em}
+.zoom-lbl{font-size:7px;letter-spacing:.12em;text-transform:uppercase;color:rgba(0,255,209,.35);margin-top:2px}
+/* ── THREAT BADGE on anchor cards ── */
+.threat-badge{
+  position:absolute;top:6px;right:28px;
+  font-family:var(--disp);font-size:7px;font-weight:700;letter-spacing:.1em;
+  padding:2px 6px;border-radius:4px;
+}
+.threat-HIGH{background:rgba(255,64,64,.18);color:#FF4040;border:1px solid rgba(255,64,64,.35)}
+.threat-MED{background:rgba(255,144,48,.14);color:#FF9030;border:1px solid rgba(255,144,48,.3)}
+.threat-LOW{background:rgba(0,255,209,.08);color:var(--c);border:1px solid rgba(0,255,209,.2)}
 </style>
 
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
@@ -189,6 +277,7 @@ async function boot(){
     await new Promise(r=>{v.onloadedmetadata=()=>{v.play();r()}});
     ss('s1','ok','Back camera active');
     getRealFocalLength(stream);
+    initZoom(stream);
   }catch(e){ss('s1','err','No camera - skyline mode');document.getElementById('cam').style.display='none';document.getElementById('fallback').style.display='block'}
   sp(18);
   ss('s2','run');
@@ -212,7 +301,11 @@ async function boot(){
   ss('s5','run');initSensors();await dl(500);ss('s5','ok',hasSensor?'Gyro active':'Drag mode');sp(100);
   await dl(700);
   const b=document.getElementById('boot');b.style.transition='opacity .8s';b.style.opacity='0';
-  setTimeout(()=>{b.style.display='none';buildCompass();initDrag();startLoop();initMovingTargets();fetchLocName(uLat,uLon);showToast('AR Targeting online - '+places.length+' targets')},800);
+  setTimeout(()=>{b.style.display='none';buildCompass();initDrag();initVoice();startLoop();
+    fetchIncidents();
+    setInterval(fetchIncidents, 120000); // refresh every 2 min
+    setInterval(updateSysPanel, 3000);   // sys panel every 3s
+    setTimeout(() => auraSpeak('AURA online. All systems nominal.'), 1500);initMovingTargets();fetchLocName(uLat,uLon);showToast('AR Targeting online - '+places.length+' targets')},800);
 }
 
 function onGPS(pos){
@@ -566,6 +659,8 @@ function drawTracked(objects, vw, vh) {
   if (!detCtx || !detCanvas) return;
   const cw = detCanvas.width, ch = detCanvas.height;
   detCtx.clearRect(0, 0, cw, ch);
+  tickDetFps();
+  updateCrowdDensity(objects || []);
   if (!objects || !objects.length) return;
 
   const scaleX = cw / (vw || cw);
@@ -583,10 +678,11 @@ function drawTracked(objects, vw, vh) {
     // Global alpha for fade in/out
     detCtx.globalAlpha = Math.min(1, fadeAlpha * (age > 3 ? 1 : age/3));
 
-    // Box
-    detCtx.strokeStyle = color;
+    // Box (IFF color overrides default)
+    const boxColor = iff !== 'UNKNOWN' ? iffColor : color;
+    detCtx.strokeStyle = boxColor;
     detCtx.lineWidth = isVehicle ? 1.5 : 1;
-    detCtx.shadowColor = color;
+    detCtx.shadowColor = boxColor;
     detCtx.shadowBlur = age > 2 ? 8 : 3; // glow intensifies as object stabilizes
     detCtx.strokeRect(x, y, w, h);
     detCtx.shadowBlur = 0;
@@ -594,7 +690,7 @@ function drawTracked(objects, vw, vh) {
     // Corner ticks
     const tick = Math.min(w, h) * 0.2;
     detCtx.lineWidth = isVehicle ? 2 : 1.5;
-    detCtx.strokeStyle = color;
+    detCtx.strokeStyle = boxColor;
     detCtx.beginPath();
     detCtx.moveTo(x,y+tick); detCtx.lineTo(x,y); detCtx.lineTo(x+tick,y);
     detCtx.moveTo(x+w-tick,y); detCtx.lineTo(x+w,y); detCtx.lineTo(x+w,y+tick);
@@ -617,19 +713,41 @@ function drawTracked(objects, vw, vh) {
       detCtx.globalAlpha = Math.min(1, fadeAlpha * (age > 3 ? 1 : age/3));
     }
 
-    // Velocity arrow
+    // Velocity arrow + predictive path
     const speed_px = Math.sqrt(velocity.vx**2 + velocity.vy**2);
-    if (speed_px > 1.2) {
+    if (speed_px > 0.8) {
       const cx = x+w/2, cy = y+h/2;
-      const arrowLen = Math.min(speed_px * 8, 50);
       const angle = Math.atan2(velocity.vy, velocity.vx);
+      // Current velocity arrow
+      const arrowLen = Math.min(speed_px * 8, 50);
       detCtx.beginPath();
       detCtx.strokeStyle = color;
       detCtx.lineWidth = 1.5;
-      detCtx.globalAlpha *= 0.7;
+      detCtx.globalAlpha *= 0.75;
       detCtx.moveTo(cx, cy);
       detCtx.lineTo(cx + Math.cos(angle)*arrowLen, cy + Math.sin(angle)*arrowLen);
       detCtx.stroke();
+      // Predictive path — 2s forward (at 6fps = 12 frames)
+      if (showPredictivePath && speed_px > 1.5) {
+        const predX = cx + velocity.vx * 12;
+        const predY = cy + velocity.vy * 12;
+        detCtx.setLineDash([3, 4]);
+        detCtx.lineWidth = 1;
+        detCtx.globalAlpha *= 0.5;
+        detCtx.beginPath();
+        detCtx.moveTo(cx + Math.cos(angle)*arrowLen, cy + Math.sin(angle)*arrowLen);
+        detCtx.lineTo(predX, predY);
+        detCtx.stroke();
+        // Predicted position dot
+        detCtx.setLineDash([]);
+        detCtx.beginPath();
+        detCtx.arc(predX, predY, 3, 0, Math.PI*2);
+        detCtx.fillStyle = color;
+        detCtx.globalAlpha *= 1.5;
+        detCtx.fill();
+        detCtx.setLineDash([]);
+      }
+      detCtx.setLineDash([]);
       detCtx.globalAlpha = Math.min(1, fadeAlpha * (age > 3 ? 1 : age/3));
     }
 
@@ -651,7 +769,14 @@ function drawTracked(objects, vw, vh) {
 
     // ID badge (helps you see same object tracked across frames)
     const idLabel = age > 2 ? ' #'+id : '';
-    const fullLabel = displayCls + ' ' + pct + '%' + distLabel + idLabel;
+    // IFF tag
+    const iff = getIff(id);
+    const iffIcon = IFF_ICONS[iff] || '';
+    const iffColor = IFF_COLORS[iff] || color;
+    // Threat
+    const threat = assessThreat(cls, score, velocity, iff);
+    const threatStr = threat.level !== 'LOW' ? ' ['+threat.level+']' : '';
+    const fullLabel = (iff !== 'UNKNOWN' ? iffIcon+' ' : '') + displayCls + ' ' + pct + '%' + distLabel + threatStr;
 
     detCtx.font = '600 9px "DM Mono", monospace';
     const tw = detCtx.measureText(fullLabel).width;
@@ -662,8 +787,8 @@ function drawTracked(objects, vw, vh) {
     detCtx.fillRect(x-1, ly-12, tw+10, 15);
     detCtx.globalAlpha = Math.min(1, fadeAlpha * (age > 3 ? 1 : age/3));
 
-    detCtx.fillStyle = color;
-    detCtx.shadowColor = color;
+    detCtx.fillStyle = iffColor;
+    detCtx.shadowColor = iffColor;
     detCtx.shadowBlur = 5;
     detCtx.fillText(fullLabel, x+4, ly);
     detCtx.shadowBlur = 0;
@@ -928,6 +1053,471 @@ function initDrag(){
   document.addEventListener('touchend',up);
 }
 
+
+// ═══════════════════════════════════════════════════════════════
+// VISION FILTER MODES — night vision, thermal, EM
+// ═══════════════════════════════════════════════════════════════
+const VISION_MODES = ['normal','nv','thermal','em'];
+const VISION_LABELS = {normal:'👁 NORMAL', nv:'🟢 NIGHT VIS', thermal:'🔴 THERMAL', em:'⚪ ENHANCE'};
+let visionModeIdx = 0;
+
+function cycleVisionMode() {
+  visionModeIdx = (visionModeIdx + 1) % VISION_MODES.length;
+  const mode = VISION_MODES[visionModeIdx];
+  const cam = document.getElementById('cam');
+  const fb = document.getElementById('fallback');
+  cam.className = mode;
+  fb.className = mode; // also apply to fallback
+  document.getElementById('vision-mode-btn').textContent = VISION_LABELS[mode];
+  // Adjust detection canvas opacity in thermal/nv modes
+  const dc = document.getElementById('det-canvas');
+  if (dc) dc.style.mixBlendMode = mode === 'thermal' ? 'screen' : 'normal';
+  showToast('Vision: ' + VISION_LABELS[mode]);
+  playTone(660, 0.05, 0.1);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SYSTEM STATUS PANEL
+// ═══════════════════════════════════════════════════════════════
+let detFpsCounter = 0, detFpsLast = Date.now(), detFpsDisplay = 0;
+let objectCount = 0;
+
+function tickDetFps() {
+  detFpsCounter++;
+  const now = Date.now();
+  if (now - detFpsLast >= 1000) {
+    detFpsDisplay = detFpsCounter;
+    detFpsCounter = 0;
+    detFpsLast = now;
+  }
+}
+
+async function updateSysPanel() {
+  // Battery
+  if (navigator.getBattery) {
+    try {
+      const bat = await navigator.getBattery();
+      const pct = Math.round(bat.level * 100);
+      const bv = document.getElementById('sys-batt');
+      if (bv) {
+        bv.textContent = pct + '%' + (bat.charging ? ' ⚡' : '');
+        bv.className = 'sys-val' + (pct < 20 ? ' crit' : pct < 40 ? ' warn' : '');
+      }
+    } catch(e) {}
+  }
+  // GPS accuracy
+  const gv = document.getElementById('sys-gps');
+  if (gv && gpsAcc != null) {
+    gv.textContent = gpsAcc + 'm';
+    gv.className = 'sys-val' + (gpsAcc > 30 ? ' warn' : gpsAcc > 60 ? ' crit' : '');
+  }
+  // Detection FPS
+  const fv = document.getElementById('sys-fps');
+  if (fv) {
+    fv.textContent = detFpsDisplay;
+    fv.className = 'sys-val' + (detFpsDisplay < 3 ? ' warn' : '');
+  }
+  // Object count
+  const ov = document.getElementById('sys-obj');
+  if (ov) ov.textContent = objectCount;
+  // Network
+  const nv = document.getElementById('sys-net');
+  if (nv && navigator.connection) {
+    const c = navigator.connection;
+    nv.textContent = (c.effectiveType || '?').toUpperCase() + (c.downlink ? ' ' + c.downlink + 'M' : '');
+  }
+  // Anchor count
+  const av = document.getElementById('sys-anc');
+  if (av) av.textContent = places.length + userAnchors.length;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CROWD DENSITY
+// ═══════════════════════════════════════════════════════════════
+function updateCrowdDensity(trackedObjects) {
+  const people = trackedObjects.filter(o => o.cls === 'person').length;
+  objectCount = trackedObjects.length;
+  const badge = document.getElementById('crowd-badge');
+  const count = document.getElementById('crowd-count');
+  const label = document.getElementById('crowd-label');
+  if (!badge) return;
+  if (people === 0) { badge.style.display = 'none'; return; }
+  badge.style.display = 'block';
+  count.textContent = people;
+  const density = people < 3 ? 'LOW DENSITY' : people < 8 ? 'MODERATE' : 'HIGH DENSITY';
+  const col = people < 3 ? 'var(--c)' : people < 8 ? 'var(--o)' : 'var(--r)';
+  count.style.color = col;
+  count.style.textShadow = '0 0 10px ' + col + '80';
+  label.textContent = density + ' · ' + people + ' IN FRAME';
+}
+
+// ═══════════════════════════════════════════════════════════════
+// IFF TAGGING — tap a tracked object to mark Friend/Foe/Watch
+// ═══════════════════════════════════════════════════════════════
+const iffTags = new Map(); // trackerId -> {tag, label}
+const IFF_CYCLE = ['UNKNOWN','FRIEND','WATCH','FOE'];
+const IFF_ICONS = {UNKNOWN:'○', FRIEND:'✓', WATCH:'!', FOE:'✕'};
+const IFF_COLORS = {UNKNOWN:'var(--c)', FRIEND:'#00FFD1', WATCH:'var(--o)', FOE:'var(--r)'};
+
+function getIff(id) { return iffTags.get(id) || 'UNKNOWN'; }
+function cycleIff(id) {
+  const cur = getIff(id);
+  const next = IFF_CYCLE[(IFF_CYCLE.indexOf(cur) + 1) % IFF_CYCLE.length];
+  iffTags.set(id, next);
+  playTone(next==='FOE'?220:next==='FRIEND'?880:440, 0.06, 0.08);
+  return next;
+}
+
+// Override drawTracked to add IFF overlay and tap handler
+// We monkey-patch via the canvas click handler
+document.addEventListener('click', function(e) {
+  if (!detCanvas) return;
+  const rect = detCanvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  // Check if click is inside any tracked bbox
+  for (const [id, obj] of tracker.objects) {
+    const [bx,by,bw,bh] = obj.bbox;
+    const cw = detCanvas.width, ch = detCanvas.height;
+    const camEl = document.getElementById('cam');
+    const scaleX = cw/(camEl.videoWidth||cw), scaleY = ch/(camEl.videoHeight||ch);
+    const x=bx*scaleX, y=by*scaleY, w=bw*scaleX, h=bh*scaleY;
+    if (mx>=x && mx<=x+w && my>=y && my<=y+h) {
+      const tag = cycleIff(id);
+      showToast('Target #'+id+' → '+IFF_ICONS[tag]+' '+tag);
+      e.stopPropagation();
+      return;
+    }
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// PREDICTIVE PATH — extend velocity vector 2s forward
+// Already computed in tracker; drawTracked will use it.
+// Exposed as a toggle.
+// ═══════════════════════════════════════════════════════════════
+let showPredictivePath = true;
+
+// ═══════════════════════════════════════════════════════════════
+// ZOOM — pinch gesture + programmatic zoom on back camera
+// ═══════════════════════════════════════════════════════════════
+let currentZoom = 1.0, maxZoom = 1.0, zoomTrack = null;
+
+async function initZoom(stream) {
+  try {
+    const track = stream.getVideoTracks()[0];
+    const caps = track.getCapabilities ? track.getCapabilities() : {};
+    if (caps.zoom) {
+      maxZoom = caps.zoom.max || 4;
+      zoomTrack = track;
+      initPinchZoom();
+    }
+  } catch(e) {}
+}
+
+async function setZoom(z) {
+  z = Math.max(1, Math.min(maxZoom || 4, z));
+  currentZoom = z;
+  const badge = document.getElementById('zoom-badge');
+  const val = document.getElementById('zoom-val');
+  if (badge) badge.style.display = z > 1.05 ? 'block' : 'none';
+  if (val) val.textContent = z.toFixed(1) + 'x';
+  if (zoomTrack) {
+    try { await zoomTrack.applyConstraints({ advanced: [{ zoom: z }] }); } catch(e) {}
+  } else {
+    // Digital zoom fallback — scale the video element
+    const cam = document.getElementById('cam');
+    cam.style.transform = `scale(${z})`;
+    cam.style.transformOrigin = 'center center';
+  }
+}
+
+function initPinchZoom() {
+  let lastDist = null;
+  let startZoom = 1;
+  document.addEventListener('touchstart', e => {
+    if (e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      lastDist = Math.sqrt(dx*dx+dy*dy);
+      startZoom = currentZoom;
+    }
+  }, {passive:true});
+  document.addEventListener('touchmove', e => {
+    if (e.touches.length !== 2 || !lastDist) return;
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    const dist = Math.sqrt(dx*dx+dy*dy);
+    const scale = dist / lastDist;
+    setZoom(startZoom * scale);
+  }, {passive:true});
+  document.addEventListener('touchend', () => { lastDist = null; }, {passive:true});
+  // Mouse wheel zoom (desktop)
+  document.addEventListener('wheel', e => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      setZoom(currentZoom * (e.deltaY < 0 ? 1.1 : 0.9));
+    }
+  }, {passive:false});
+}
+
+// ═══════════════════════════════════════════════════════════════
+// THREAT ASSESSMENT — scores each detected object
+// ═══════════════════════════════════════════════════════════════
+function assessThreat(cls, score, velocity, iff) {
+  if (iff === 'FOE') return {level:'HIGH', reason:'Marked FOE'};
+  if (iff === 'FRIEND') return {level:'LOW', reason:'Marked FRIEND'};
+
+  let points = 0;
+  const speed_px = velocity ? Math.sqrt(velocity.vx**2 + velocity.vy**2) : 0;
+
+  // Class-based base threat
+  if (cls === 'person') points += 1;
+  if (cls === 'car' || cls === 'truck' || cls === 'bus') points += 1;
+  if (cls === 'motorcycle') points += 2;
+  if (cls === 'knife' || cls === 'scissors') points += 3;
+  if (cls === 'sports_ball' && speed_px > 3) points += 1;
+
+  // Movement-based threat
+  if (speed_px > 5) points += 1;    // fast moving
+  if (speed_px > 10) points += 1;   // very fast
+  if (velocity && velocity.vx < -2 && velocity.vy < -2) points += 1; // approaching
+
+  // Confidence modifier
+  if (score > 0.85) points = Math.round(points * 1.2);
+
+  const level = points >= 5 ? 'HIGH' : points >= 2 ? 'MED' : 'LOW';
+  const reason = speed_px > 8 ? 'Fast movement' : cls === 'person' ? 'Person detected' : cls;
+  return {level, reason, score: points};
+}
+
+// ═══════════════════════════════════════════════════════════════
+// LIVE INCIDENT FEED — PulsePoint / 911 near GPS
+// ═══════════════════════════════════════════════════════════════
+let incidents = [];
+
+async function fetchIncidents() {
+  try {
+    // PulsePoint public API — real 911 CAD data in supported cities
+    const r = await fetch('/api/incidents?lat='+uLat+'&lon='+uLon, {signal: AbortSignal.timeout(5000)});
+    if (r.ok) {
+      const d = await r.json();
+      incidents = d.incidents || [];
+      addIncidentAnchors();
+    }
+  } catch(e) {
+    // PulsePoint may not cover all areas — silent fail
+  }
+}
+
+function addIncidentAnchors() {
+  const layer = document.getElementById('anc-layer');
+  incidents.forEach((inc, i) => {
+    const id = 'inc_'+i;
+    if (document.getElementById('an-'+id)) return;
+    const dist = hav(uLat,uLon,inc.lat,inc.lon);
+    const ds = dist>=1000?(dist/1000).toFixed(1)+'km':dist+'m';
+    const el = document.createElement('div');
+    el.className = 'anc vr incident-anc';
+    el.id = 'an-'+id;
+    el.style.setProperty('--w','175px');
+    el.dataset.bearing = brg(uLat,uLon,inc.lat,inc.lon);
+    el.dataset.elev = 20;
+    el.innerHTML = '<div class="acard"><div class="acbr"></div>'
+      +'<div class="adist">'+ds+'</div>'
+      +'<div class="atype"><div class="atd"></div>INCIDENT</div>'
+      +'<div class="atitle">🚨 '+inc.type+'</div>'
+      +'<div class="asub">'+(inc.address||'Nearby')+' · '+ds+'</div>'
+      +'</div>'
+      +'<div class="dist-live">dist: '+ds+'</div>'
+      +'<div class="astem" style="height:70px"></div>'
+      +'<div class="adot"></div>';
+    el.addEventListener('click', () => {
+      document.getElementById('p-ico').textContent='🚨';
+      document.getElementById('p-type').textContent='LIVE INCIDENT · 911 CAD';
+      document.getElementById('p-title').textContent=inc.type;
+      document.getElementById('p-body').innerHTML='<div class="psg">'
+        +'<div class="pst"><div class="psv">'+ds+'</div><div class="psl">Distance</div></div>'
+        +'<div class="pst"><div class="psv">'+(inc.units||1)+'</div><div class="psl">Units</div></div>'
+        +'<div class="pst"><div class="psv">'+(inc.age||'Now')+'</div><div class="psl">Age</div></div>'
+        +'</div><div class="pdesc">'+inc.type+' reported at '+(inc.address||'nearby location')+'. Source: PulsePoint 911 CAD feed.</div>'
+        +'<div class="pacts"><button class="pact pa" onclick="closePopup()">Track</button><button class="pact ps2" onclick="closePopup()">Dismiss</button></div>';
+      document.getElementById('popup').classList.add('on');
+      doFlash();
+    });
+    layer.appendChild(el);
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// VOICE — Web Speech API
+// ═══════════════════════════════════════════════════════════════
+let voiceRecog = null, voiceActive = false, synth = window.speechSynthesis;
+let auraVoice = null;
+
+function initVoice() {
+  // Pick a voice — prefer female, en-US
+  const setVoice = () => {
+    const voices = synth.getVoices();
+    auraVoice = voices.find(v => v.name.includes('Samantha'))
+      || voices.find(v => v.lang === 'en-US' && v.name.toLowerCase().includes('female'))
+      || voices.find(v => v.lang === 'en-US')
+      || voices[0];
+  };
+  setVoice();
+  if (synth.onvoiceschanged !== undefined) synth.onvoiceschanged = setVoice;
+
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { console.warn('No speech recognition'); return; }
+
+  voiceRecog = new SR();
+  voiceRecog.continuous = false;
+  voiceRecog.lang = 'en-US';
+  voiceRecog.interimResults = true;
+
+  voiceRecog.onresult = e => {
+    const transcript = Array.from(e.results).map(r => r[0].transcript).join(' ').trim().toLowerCase();
+    showVoiceCaption('You: ' + transcript);
+    if (e.results[e.results.length-1].isFinal) handleVoiceCommand(transcript);
+  };
+
+  voiceRecog.onerror = e => { stopVoice(); showVoiceCaption(''); };
+  voiceRecog.onend = () => stopVoice();
+}
+
+function auraSpeak(text, priority) {
+  if (!synth) return;
+  if (priority) synth.cancel();
+  const utt = new SpeechSynthesisUtterance(text);
+  utt.voice = auraVoice;
+  utt.rate = 1.05;
+  utt.pitch = 1.1;
+  utt.volume = 0.85;
+  synth.speak(utt);
+  showVoiceCaption('AURA: ' + text);
+  setTimeout(() => {
+    const cap = document.getElementById('voice-caption');
+    if (cap && cap.textContent === 'AURA: ' + text) {
+      cap.classList.remove('on');
+    }
+  }, Math.max(2000, text.length * 60));
+}
+
+function showVoiceCaption(text) {
+  const el = document.getElementById('voice-caption');
+  if (!el) return;
+  el.textContent = text;
+  el.classList.toggle('on', !!text);
+}
+
+function toggleVoice() {
+  if (!voiceRecog) { auraSpeak('Voice recognition not supported in this browser.', true); return; }
+  if (voiceActive) stopVoice();
+  else startVoice();
+}
+
+function startVoice() {
+  if (!audioCtx) initAudio();
+  voiceActive = true;
+  document.getElementById('voice-ring').classList.add('listening');
+  showVoiceCaption('Listening...');
+  playTone(660, 0.06, 0.12);
+  try { voiceRecog.start(); } catch(e) { stopVoice(); }
+}
+
+function stopVoice() {
+  voiceActive = false;
+  document.getElementById('voice-ring').classList.remove('listening');
+  try { voiceRecog.stop(); } catch(e) {}
+  setTimeout(() => showVoiceCaption(''), 1500);
+}
+
+function handleVoiceCommand(cmd) {
+  playTone(440, 0.05, 0.08);
+
+  // ── Nearby query ──
+  if (cmd.includes('near') || cmd.includes('around') || cmd.includes('what') && cmd.includes('here')) {
+    const top = places.slice(0,3);
+    if (!top.length) { auraSpeak('No nearby locations found.', true); return; }
+    const names = top.map(p => p.name + ' ' + (p.dist >= 1000 ? (p.dist/1000).toFixed(1) + ' kilometers' : p.dist + ' meters') + ' to the ' + degC(p.bearing)).join('. ');
+    auraSpeak('Nearest targets: ' + names, true);
+    return;
+  }
+
+  // ── Speed query ──
+  if (cmd.includes('speed') || cmd.includes('fast') || cmd.includes('how quick')) {
+    const spd = Math.round(speedMph);
+    const traffic = trafficData ? ', traffic flowing at ' + trafficData.currentSpeedMph + ' miles per hour' : '';
+    auraSpeak('You are traveling at ' + spd + ' miles per hour' + traffic + '.', true);
+    return;
+  }
+
+  // ── Weather query ──
+  if (cmd.includes('weather') || cmd.includes('temperature') || cmd.includes('rain')) {
+    if (!weatherData.tf) { auraSpeak('Weather data unavailable.', true); return; }
+    auraSpeak(weatherData.desc + '. Currently ' + weatherData.tF + ' degrees, feels like ' + weatherData.fF + '.', true);
+    return;
+  }
+
+  // ── Tag location ──
+  if (cmd.includes('tag') || cmd.includes('mark') || cmd.includes('drop')) {
+    const label = cmd.replace(/tag|mark|drop|this|location|here|as|a|an/gi,'').trim() || 'Marked';
+    tagHere(label, '📍');
+    auraSpeak('Location tagged as ' + label, true);
+    return;
+  }
+
+  // ── Night vision ──
+  if (cmd.includes('night') || cmd.includes('dark') || cmd.includes('vision')) {
+    visionModeIdx = VISION_MODES.indexOf('nv') - 1;
+    cycleVisionMode();
+    auraSpeak('Night vision activated.', true);
+    return;
+  }
+
+  // ── Thermal ──
+  if (cmd.includes('thermal')) {
+    visionModeIdx = VISION_MODES.indexOf('thermal') - 1;
+    cycleVisionMode();
+    auraSpeak('Thermal imaging activated.', true);
+    return;
+  }
+
+  // ── Normal vision ──
+  if (cmd.includes('normal') || cmd.includes('clear') || cmd.includes('off')) {
+    visionModeIdx = VISION_MODES.indexOf('normal') - 1;
+    cycleVisionMode();
+    auraSpeak('Switching to normal vision.', true);
+    return;
+  }
+
+  // ── Zoom ──
+  const zoomMatch = cmd.match(/(zoom|magnif).*(\d+)/);
+  if (zoomMatch) {
+    const z = parseInt(zoomMatch[2]);
+    setZoom(z);
+    auraSpeak('Zoom set to ' + z + ' times.', true);
+    return;
+  }
+
+  // ── Incidents ──
+  if (cmd.includes('incident') || cmd.includes('emergency') || cmd.includes('danger')) {
+    if (!incidents.length) { auraSpeak('No active incidents detected nearby.', true); return; }
+    auraSpeak(incidents.length + ' incident' + (incidents.length>1?'s':'') + ' nearby. Nearest: ' + incidents[0].type + ' ' + incidents[0].dist + ' meters away.', true);
+    return;
+  }
+
+  // ── Status ──
+  if (cmd.includes('status') || cmd.includes('system') || cmd.includes('report')) {
+    const pct = document.getElementById('sys-batt')?.textContent || 'unknown';
+    auraSpeak('System nominal. Battery ' + pct + '. Tracking ' + tracker.objects.size + ' objects. ' + places.length + ' anchors loaded. GPS accuracy ' + (gpsAcc || '--') + ' meters.', true);
+    return;
+  }
+
+  // ── Fallback ──
+  auraSpeak("Sorry, I didn't catch that. Try asking what's nearby, your speed, or the weather.", true);
+}
+
+
 function startLoop(){
   (function loop(){
     requestAnimationFrame(loop);frame++;
@@ -955,5 +1545,35 @@ boot();
   <div id="ts-limit" style="font-size:7px;letter-spacing:.1em;color:rgba(255,144,48,.5);margin-top:2px"></div>
   <div id="ts-delta" style="display:none;font-size:8px;letter-spacing:.1em;font-family:'Orbitron',monospace;font-weight:700;margin-top:4px"></div>
 </div>
+
+<!-- VISION MODE BUTTON -->
+<button id="vision-mode-btn" onclick="cycleVisionMode()">👁 NORMAL</button>
+
+<!-- SYSTEM STATUS PANEL -->
+<div id="sys-panel">
+  <div class="sys-row"><span class="sys-lbl">Battery</span><span class="sys-val" id="sys-batt">--%</span></div>
+  <div class="sys-row"><span class="sys-lbl">GPS Acc</span><span class="sys-val" id="sys-gps">--m</span></div>
+  <div class="sys-row"><span class="sys-lbl">Det FPS</span><span class="sys-val" id="sys-fps">--</span></div>
+  <div class="sys-row"><span class="sys-lbl">Objects</span><span class="sys-val" id="sys-obj">0</span></div>
+  <div class="sys-row"><span class="sys-lbl">Network</span><span class="sys-val" id="sys-net">--</span></div>
+  <div class="sys-row"><span class="sys-lbl">Anchors</span><span class="sys-val" id="sys-anc">0</span></div>
+</div>
+
+<!-- CROWD DENSITY -->
+<div id="crowd-badge">
+  <div class="crowd-count" id="crowd-count">0</div>
+  <div class="crowd-label" id="crowd-label">in frame</div>
+</div>
+
+<!-- VOICE BUTTON + CAPTION -->
+<div id="voice-caption"></div>
+<div id="voice-ring" onclick="toggleVoice()" title="Hold to speak to AURA">🎙</div>
+
+<!-- ZOOM BADGE -->
+<div id="zoom-badge">
+  <div class="zoom-val" id="zoom-val">1.0x</div>
+  <div class="zoom-lbl">OPTICAL</div>
+</div>
+
 </body>
 </html>
