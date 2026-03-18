@@ -42,5 +42,6 @@
   ],
   "env": {
     "TOMTOM_KEY": "@tomtom_key"
-  }
+  },
+  "_build": "v4-full-feature-build"
 }
