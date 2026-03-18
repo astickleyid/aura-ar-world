@@ -2,17 +2,45 @@
   "version": 2,
   "name": "aura-ar-world",
   "builds": [
-    { "src": "index.html", "use": "@vercel/static" }
+    {
+      "src": "index.html",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "api/*.js",
+      "use": "@vercel/node"
+    }
   ],
   "routes": [
-    { "src": "/(.*)", "dest": "/index.html" }
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
   ],
   "headers": [
     {
       "source": "/(.*)",
       "headers": [
-        { "key": "Permissions-Policy", "value": "geolocation=*, gyroscope=*, accelerometer=*" }
+        {
+          "key": "Permissions-Policy",
+          "value": "geolocation=*, gyroscope=*, accelerometer=*, camera=*"
+        },
+        {
+          "key": "Cross-Origin-Embedder-Policy",
+          "value": "require-corp"
+        },
+        {
+          "key": "Cross-Origin-Opener-Policy",
+          "value": "same-origin"
+        }
       ]
     }
-  ]
+  ],
+  "env": {
+    "TOMTOM_KEY": "@tomtom_key"
+  }
 }
