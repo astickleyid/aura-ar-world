@@ -506,23 +506,24 @@ let elevenApiKey = 'sk_9600284caed4840f2a32df2c73288f5a5612f9fe874a8e59';
 let elevenAudio = null;
 let elevenQueue = [];
 let elevenSpeaking = false;
+let elevenFailed = false; // if key is bad, stop trying and use browser TTS
 
 function auraSpeak(text, priority) {
   if (!text) return;
   
-  // If we have an ElevenLabs key, use it
-  if (elevenApiKey) {
-    if (priority) {
-      // Cancel current
-      if (elevenAudio) { elevenAudio.pause(); elevenAudio = null; }
-      elevenQueue = [];
-      elevenSpeaking = false;
-      synth.cancel(); // also kill any browser TTS
-    }
+  if (priority) {
+    if (elevenAudio) { elevenAudio.pause(); elevenAudio = null; }
+    elevenQueue = [];
+    elevenSpeaking = false;
+    synth.cancel();
+  }
+  
+  // Try ElevenLabs if key exists and hasn't failed
+  if (elevenApiKey && !elevenFailed) {
     elevenQueue.push(text);
     if (!elevenSpeaking) processElevenQueue();
   } else {
-    // Fallback to browser TTS
+    // Browser TTS
     auraSpeakBrowser(text, priority);
   }
   
@@ -554,9 +555,9 @@ async function processElevenQueue() {
         text: text,
         model_id: ELEVEN_MODEL,
         voice_settings: {
-          stability: 0.55,        // some variation — not robotic
-          similarity_boost: 0.78, // stay close to Lily's core sound
-          style: 0.30,            // subtle expressiveness
+          stability: 0.55,
+          similarity_boost: 0.78,
+          style: 0.30,
           use_speaker_boost: true
         }
       })
@@ -564,10 +565,17 @@ async function processElevenQueue() {
     
     if (!resp.ok) {
       console.warn('ElevenLabs error:', resp.status);
-      // Fall back to browser TTS for this line
+      // If 401/403, key is bad — disable ElevenLabs permanently for this session
+      if (resp.status === 401 || resp.status === 403) {
+        elevenFailed = true;
+        console.warn('ElevenLabs key invalid — switching to browser TTS permanently');
+      }
       auraSpeakBrowser(text, true);
       elevenSpeaking = false;
-      processElevenQueue();
+      // Drain remaining queue through browser TTS
+      while (elevenQueue.length) {
+        auraSpeakBrowser(elevenQueue.shift(), false);
+      }
       return;
     }
     
@@ -579,15 +587,15 @@ async function processElevenQueue() {
       elevenAudio = null;
       elevenSpeaking = false;
       setVoiceStatus('');
-      processElevenQueue(); // next in queue
+      processElevenQueue();
     };
     elevenAudio.onerror = () => {
+      auraSpeakBrowser(text, true);
       elevenSpeaking = false;
       setVoiceStatus('');
       processElevenQueue();
     };
     elevenAudio.play().catch(() => {
-      // Autoplay blocked — fall back
       auraSpeakBrowser(text, true);
       elevenSpeaking = false;
       processElevenQueue();
@@ -601,12 +609,23 @@ async function processElevenQueue() {
   }
 }
 
-// Browser TTS fallback (uses the best available British female voice)
+// Browser TTS fallback
 function auraSpeakBrowser(text, priority) {
   if (!synth) return;
   if (priority) synth.cancel();
   const utt = new SpeechSynthesisUtterance(text);
-  utt.voice = auraVoice;
+  // If auraVoice hasn't loaded yet, try loading now
+  if (!auraVoice) {
+    const voices = synth.getVoices();
+    if (voices.length) {
+      auraVoice = voices.find(v => v.lang === 'en-GB')
+        || voices.find(v => v.lang.startsWith('en') && v.name.toLowerCase().includes('female'))
+        || voices.find(v => v.lang.startsWith('en'))
+        || voices[0];
+    }
+  }
+  if (auraVoice) utt.voice = auraVoice;
+  utt.lang = 'en-GB';
   utt.rate = 0.94;
   utt.pitch = 0.92;
   utt.volume = 0.85;
