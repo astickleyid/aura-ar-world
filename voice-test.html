@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="background:#000;color:#0f0;font-family:monospace;padding:20px">
+<h2>AURA Voice Debug</h2>
+<div id="log" style="white-space:pre-wrap;font-size:12px;line-height:1.8"></div>
+<br>
+<button onclick="testSpeak()" style="padding:20px 40px;font-size:18px;background:#0f0;border:none;border-radius:8px;cursor:pointer">
+  TAP TO TEST VOICE
+</button>
+<br><br>
+<button onclick="listVoices()" style="padding:10px 20px;font-size:14px;background:#333;color:#0f0;border:1px solid #0f0;border-radius:6px;cursor:pointer">
+  LIST ALL VOICES
+</button>
+
+<script>
+const log = (msg) => {
+  document.getElementById('log').textContent += msg + '\n';
+  console.log(msg);
+};
+
+const synth = window.speechSynthesis;
+log('speechSynthesis exists: ' + !!synth);
+log('speechSynthesis.speaking: ' + synth?.speaking);
+log('speechSynthesis.paused: ' + synth?.paused);
+
+// Try to get voices immediately
+let voices = synth ? synth.getVoices() : [];
+log('Voices available immediately: ' + voices.length);
+
+if (synth && synth.onvoiceschanged !== undefined) {
+  synth.onvoiceschanged = () => {
+    voices = synth.getVoices();
+    log('Voices loaded (async): ' + voices.length);
+  };
+}
+
+// Check for SpeechRecognition
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+log('SpeechRecognition: ' + (SR ? 'YES' : 'NO'));
+
+function testSpeak() {
+  log('--- TEST SPEAK ---');
+  
+  if (!synth) {
+    log('ERROR: No speechSynthesis API');
+    return;
+  }
+  
+  // Cancel anything pending
+  synth.cancel();
+  
+  voices = synth.getVoices();
+  log('Voices now: ' + voices.length);
+  
+  if (voices.length === 0) {
+    log('ERROR: No voices available');
+    log('Trying without voice selection...');
+  }
+  
+  // Pick best voice
+  let voice = null;
+  if (voices.length) {
+    voice = voices.find(v => v.lang === 'en-GB') 
+         || voices.find(v => v.lang.startsWith('en'))
+         || voices[0];
+    log('Selected voice: ' + voice.name + ' [' + voice.lang + ']');
+  }
+  
+  const utt = new SpeechSynthesisUtterance("Right. I'm online. Everything's looking normal.");
+  if (voice) utt.voice = voice;
+  utt.lang = 'en-GB';
+  utt.rate = 0.94;
+  utt.pitch = 0.92;
+  utt.volume = 1.0;
+  
+  utt.onstart = () => log('EVENT: onstart — speaking now');
+  utt.onend = () => log('EVENT: onend — finished');
+  utt.onerror = (e) => log('EVENT: onerror — ' + e.error);
+  utt.onpause = () => log('EVENT: onpause');
+  utt.onresume = () => log('EVENT: onresume');
+  
+  log('Calling synth.speak()...');
+  synth.speak(utt);
+  log('synth.speaking: ' + synth.speaking);
+  log('synth.pending: ' + synth.pending);
+  
+  // Chrome bug: sometimes needs a kick
+  setTimeout(() => {
+    log('After 500ms — speaking: ' + synth.speaking + ', pending: ' + synth.pending);
+    if (!synth.speaking && !synth.pending) {
+      log('WORKAROUND: Trying resume...');
+      synth.resume();
+    }
+  }, 500);
+  
+  setTimeout(() => {
+    log('After 3s — speaking: ' + synth.speaking);
+  }, 3000);
+}
+
+function listVoices() {
+  voices = synth.getVoices();
+  log('--- ALL VOICES (' + voices.length + ') ---');
+  voices.forEach((v, i) => {
+    log(i + ': ' + v.name + ' [' + v.lang + '] ' + (v.default ? 'DEFAULT' : '') + ' ' + (v.localService ? 'local' : 'network'));
+  });
+}
+</script>
+</body>
+</html>
