@@ -1798,6 +1798,7 @@ async function callAuraAI(userMessage) {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(5000),
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 1000,
@@ -2110,31 +2111,38 @@ function initVoice() {
 
 // ── ElevenLabs Config ────────────────────────────────────────
 const ELEVEN_VOICE_ID = 'pFZP5JQG7iQjIQuC4Bku'; // Lily — British, Velvety Actress
-const ELEVEN_MODEL = 'eleven_flash_v2_5'; // fastest for real-time
-let elevenApiKey = 'sk_9600284caed4840f2a32df2c73288f5a5612f9fe874a8e59';
+const ELEVEN_MODEL = 'eleven_flash_v2_5';
+let elevenApiKey = ''; // disabled until valid key provided
 let elevenAudio = null;
 let elevenQueue = [];
 let elevenSpeaking = false;
-let elevenFailed = false; // if key is bad, stop trying and use browser TTS
+let elevenFailed = true; // start as failed — no valid key yet
+let ttsUnlocked = false; // mobile requires user gesture to unlock TTS
+
+// Unlock TTS on first user interaction (required by mobile browsers)
+function unlockTTS() {
+  if (ttsUnlocked) return;
+  ttsUnlocked = true;
+  // Speak a silent utterance to unlock the audio context
+  if (synth) {
+    const unlock = new SpeechSynthesisUtterance('');
+    unlock.volume = 0;
+    synth.speak(unlock);
+  }
+  if (!audioCtx) initAudio();
+  // Now speak the greeting since we couldn't at boot
+  setTimeout(() => auraSpeak(AURA_BOOT_GREETING, true), 300);
+}
+
+// Attach unlock to all user gesture events
+document.addEventListener('click', unlockTTS, { once: true });
+document.addEventListener('touchstart', unlockTTS, { once: true });
 
 function auraSpeak(text, priority) {
   if (!text) return;
   
-  if (priority) {
-    if (elevenAudio) { elevenAudio.pause(); elevenAudio = null; }
-    elevenQueue = [];
-    elevenSpeaking = false;
-    synth.cancel();
-  }
-  
-  // Try ElevenLabs if key exists and hasn't failed
-  if (elevenApiKey && !elevenFailed) {
-    elevenQueue.push(text);
-    if (!elevenSpeaking) processElevenQueue();
-  } else {
-    // Browser TTS
-    auraSpeakBrowser(text, priority);
-  }
+  // Always use browser TTS until ElevenLabs key is valid
+  auraSpeakBrowser(text, priority);
   
   // Show caption regardless
   if (!panelOpen) {
@@ -2358,7 +2366,7 @@ async function boot(){
     fetchIncidents();
     setInterval(fetchIncidents, 120000); // refresh every 2 min
     setInterval(updateSysPanel, 3000);   // sys panel every 3s
-    setTimeout(() => auraSpeak(AURA_BOOT_GREETING), 1500);initMovingTargets();fetchLocName(uLat,uLon);showToast('AR Targeting online - '+places.length+' targets')},800);
+    setTimeout(() => { /* greeting deferred until first user tap */ }, 1500);initMovingTargets();fetchLocName(uLat,uLon);showToast('AR Targeting online - '+places.length+' targets')},800);
 }
 
 // ════════ main.js ════════
