@@ -84,9 +84,9 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'DM
 .tbox.locked .tbox-label{color:var(--r);text-shadow:0 0 8px rgba(255,64,64,.6)}
 @keyframes lockpulse{0%,100%{box-shadow:0 0 10px rgba(255,64,64,.4)}50%{box-shadow:0 0 25px rgba(255,64,64,.7)}}
 /* WEATHER */
-#wx{position:fixed;top:0;right:0;display:none;background:rgba(0,2,10,.3);border-left:1px solid rgba(0,255,209,.06);border-bottom:1px solid rgba(0,255,209,.06);border-radius:0 0 0 8px;padding:6px 12px;backdrop-filter:blur(8px);pointer-events:none;z-index:3;text-align:right}
-.wxt{font-family:var(--disp);font-size:16px;font-weight:700;color:var(--c);text-shadow:0 0 14px rgba(0,255,209,.4);letter-spacing:.04em}
-.wxd{font-size:8px;letter-spacing:.1em;color:rgba(255,255,255,.35);margin-top:2px}.wxs{font-size:7px;letter-spacing:.08em;color:rgba(0,255,209,.3);margin-top:1px}
+/* wx panel: removed — weather shown inline in location pill */
+
+
 /* POPUP */
 #popup{position:fixed;bottom:70px;left:50%;transform:translateX(-50%) translateY(16px);width:min(340px,90vw);background:rgba(0,2,12,.7);border:1px solid rgba(0,255,209,.18);border-radius:12px;backdrop-filter:blur(24px);z-index:10;opacity:0;pointer-events:none;transition:all .32s cubic-bezier(.34,1.1,.64,1);box-shadow:0 8px 40px rgba(0,0,0,.5)}
 #popup.on{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:all}
@@ -105,7 +105,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'DM
 .pa{background:rgba(0,255,209,.07);border:1px solid rgba(0,255,209,.27);color:var(--c)}.pa:hover{background:rgba(0,255,209,.14)}
 .ps2{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.1);color:rgba(255,255,255,.36)}.ps2:hover{color:rgba(255,255,255,.75)}
 #radar{position:fixed;bottom:14px;right:14px;pointer-events:none;z-index:3;background:rgba(0,2,12,.25);border:1px solid rgba(0,255,209,.08);border-radius:50%}
-.bst{position:fixed;z-index:3;pointer-events:none;bottom:100px}.bst.L{left:14px}.bst.R{right:14px;text-align:right}
+.bst{position:fixed;z-index:3;pointer-events:none;bottom:18px;opacity:0.4}.bst.R{right:14px;text-align:right}
 .bv{font-family:var(--disp);font-size:10px;font-weight:500;color:var(--c);text-shadow:0 0 10px rgba(0,255,209,.4);letter-spacing:.05em}
 .bl2{font-size:7px;letter-spacing:.14em;text-transform:uppercase;color:rgba(0,255,209,.28);margin-top:2px}
 #toast{position:fixed;top:74px;left:50%;transform:translateX(-50%) translateY(-10px);background:rgba(0,2,12,.92);border:1px solid rgba(0,255,209,.26);border-radius:10px;padding:9px 18px;font-size:11px;color:rgba(0,255,209,.8);letter-spacing:.08em;backdrop-filter:blur(18px);z-index:30;opacity:0;pointer-events:none;transition:all .3s ease;white-space:nowrap}
@@ -137,22 +137,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'DM
   font-family:var(--disp);font-size:7px;letter-spacing:.1em;color:rgba(0,255,209,.6);
   backdrop-filter:blur(8px);pointer-events:all;
 }
-/* ── SYSTEM STATUS PANEL ── */
-#sys-panel{
-  position:fixed;right:10px;top:50%;transform:translateY(-50%);
-  z-index:5;pointer-events:none;
-  display:flex;flex-direction:column;gap:3px;
-  opacity:0.6;
-}
-.sys-row{
-  background:rgba(0,2,10,.2);border:1px solid rgba(0,255,209,.06);
-  border-radius:5px;padding:4px 8px;
-  display:flex;align-items:center;justify-content:space-between;gap:8px;
-  backdrop-filter:blur(6px);min-width:90px;
-}
-.sys-lbl{font-size:7px;letter-spacing:.14em;text-transform:uppercase;color:rgba(0,255,209,.35)}
-.sys-val{font-family:var(--disp);font-size:10px;font-weight:500;color:var(--c);letter-spacing:.04em}
-.sys-val.warn{color:var(--o)}.sys-val.crit{color:var(--r)}
+/* sys-panel: removed — available via voice */
 /* ── VOICE UI ── */
 #voice-ring{
   position:fixed;bottom:16px;right:104px;
@@ -325,30 +310,26 @@ function loadTF() {
   <div class="brk tr"><svg viewBox="0 0 52 52" fill="none"><path d="M2 21L2 2L21 2" stroke="rgba(0,255,209,.55)" stroke-width="1.5"/><path d="M2 9L2 2L9 2" stroke="rgba(0,255,209,.92)" stroke-width="1"/></svg></div>
   <div class="brk bl"><svg viewBox="0 0 52 52" fill="none"><path d="M2 21L2 2L21 2" stroke="rgba(0,255,209,.55)" stroke-width="1.5"/><path d="M2 9L2 2L9 2" stroke="rgba(0,255,209,.92)" stroke-width="1"/></svg></div>
   <div class="brk br2"><svg viewBox="0 0 52 52" fill="none"><path d="M2 21L2 2L21 2" stroke="rgba(0,255,209,.55)" stroke-width="1.5"/><path d="M2 9L2 2L9 2" stroke="rgba(0,255,209,.92)" stroke-width="1"/></svg></div>
-  <div id="np"><div class="np1" id="np-name">ACQUIRING...</div><div class="np2"><span class="lpip"></span><span id="np-sub">LIVE AR</span></div></div>
+  <div id="np"><div class="np1"><span id="np-name">ACQUIRING...</span><span id="np-wx" style="margin-left:10px;font-size:8px;color:rgba(0,255,209,.5);font-weight:400"></span></div><div class="np2"><span class="lpip"></span><span id="np-sub">LIVE AR</span></div></div>
   <div id="cw"><div id="ci"><div id="cs"></div><div class="caret"></div></div></div>
-  <div class="cst L"><div class="cl">Heading</div><div class="cv" id="v-hdg">---</div></div>
-  <div class="cst R"><div class="cl">Targets</div><div class="cv" id="v-anc">0</div></div>
-  <div id="ret" style="pointer-events:all;cursor:crosshair" onclick="openTagDialog()" title="Tap to tag location"><div style="position:relative;width:52px;height:52px"><div class="ri r1"></div><div class="ri r2"></div><div class="rdot"></div><div class="rt rh"></div><div class="rt rh2"></div><div class="rt rv"></div><div class="rt rv2"></div></div></div>
+  <!-- heading + targets: shown in compass strip only -->
+  <div id="ret" style="pointer-events:all;cursor:crosshair" onclick="reticleTap()" oncontextmenu="event.preventDefault();openTagDialog()" title="Tap to scan · Long-press to tag"><div style="position:relative;width:52px;height:52px"><div class="ri r1"></div><div class="ri r2"></div><div class="rdot"></div><div class="rt rh"></div><div class="rt rh2"></div><div class="rt rv"></div><div class="rt rv2"></div></div></div>
   <div id="anc-layer"></div>
 </div>
 
 <!-- ═══ SPEED CLUSTER ═══ -->
 <div id="speed-cluster">
-  <div class="spd-block" id="spd-you"><div class="spd-value" id="spd-val">0</div><div class="spd-unit">mph you</div></div>
-  <div class="spd-block sm" id="spd-alt"><div class="spd-value" id="alt-val">--</div><div class="spd-unit">ft alt</div></div>
-  <div class="spd-block sm" id="spd-acc"><div class="spd-value" id="acc-val">--</div><div class="spd-unit">m gps acc</div></div>
+  <div class="spd-block" id="spd-you"><div class="spd-value" id="spd-val">0</div><div class="spd-unit">mph</div></div>
 </div>
 
 <!-- ═══ WEATHER ═══ -->
-<div id="wx"><div class="wxt" id="wx-t">--F</div><div class="wxd" id="wx-d"></div><div class="wxs" id="wx-s"></div></div>
+<div id="wx" style="display:none"></div>
 
 <!-- ═══ POPUP ═══ -->
 <div id="popup"><div class="ph"><div class="pico" id="p-ico"></div><div class="pmt"><div class="ptyp" id="p-type"></div><div class="ptit" id="p-title"></div></div><button class="pcl" onclick="closePopup()">X</button></div><div class="pb" id="p-body"></div></div>
 
 <!-- ═══ RADAR ═══ -->
 <canvas id="radar" width="78" height="78"></canvas>
-<div class="bst L"><div class="bv" id="v-pitch">+0</div><div class="bl2">Pitch</div></div>
 <div class="bst R"><div class="bv" id="v-time">--:--</div><div class="bl2">Local</div></div>
 
 <!-- ═══ TOAST + FLASH ═══ -->
@@ -388,14 +369,7 @@ function loadTF() {
 <button id="vision-mode-btn" onclick="cycleVisionMode()">👁 NORMAL</button>
 
 <!-- ═══ SYSTEM STATUS PANEL ═══ -->
-<div id="sys-panel">
-  <div class="sys-row"><span class="sys-lbl">Battery</span><span class="sys-val" id="sys-batt">--%</span></div>
-  <div class="sys-row"><span class="sys-lbl">GPS Acc</span><span class="sys-val" id="sys-gps">--m</span></div>
-  <div class="sys-row"><span class="sys-lbl">Det FPS</span><span class="sys-val" id="sys-fps">--</span></div>
-  <div class="sys-row"><span class="sys-lbl">Objects</span><span class="sys-val" id="sys-obj">0</span></div>
-  <div class="sys-row"><span class="sys-lbl">Network</span><span class="sys-val" id="sys-net">--</span></div>
-  <div class="sys-row"><span class="sys-lbl">Anchors</span><span class="sys-val" id="sys-anc">0</span></div>
-</div>
+<!-- SYS PANEL: removed — diagnostics available via voice command "status" -->
 
 <!-- ═══ CROWD DENSITY ═══ -->
 <div id="crowd-badge">
@@ -441,6 +415,7 @@ let uLat=40.758,uLon=-73.9855,heading=0,smoothH=0,pitch=0,smoothP=0;
 let hasSensor=false,dragActive=false,lx=0,ly=0,frame=0;
 let speedMph=0,altFt=null,gpsAcc=null,prevLat=null,prevLon=null,prevTime=null;
 let weatherData={},places=[],audioCtx=null;
+let driveMode = false; // auto-enabled at >15mph, disables walk-only UI
 
 const ss=(id,st,tx)=>{const e=document.getElementById(id);e.className='bstep '+st;if(tx)e.querySelector('.bdot').nextSibling.textContent=' '+tx};
 const sp=p=>{document.getElementById('bfill').style.width=p+'%'};
@@ -489,10 +464,10 @@ async function fetchWeather(lat,lon){
 }
 function updateWx(){
   if(!weatherData.tf)return;
-  document.getElementById('wx-t').textContent=weatherData.icon+' '+weatherData.tf;
-  document.getElementById('wx-d').textContent=weatherData.desc;
-  document.getElementById('wx-s').textContent='Feels '+weatherData.fF+'F - '+weatherData.wind+'mph '+weatherData.wd+' - '+weatherData.hum+'% humidity';
-  document.getElementById('wx').style.display='block';
+  // Inject tiny weather into the location pill
+  const wxEl = document.getElementById('np-wx');
+  if(wxEl) wxEl.textContent = weatherData.icon + ' ' + weatherData.tf;
+  // Old panel hidden — keep element for data reference
 }
 
 // ════════ places.js ════════
@@ -545,7 +520,7 @@ function getMock(){return[{id:'m1',name:'CCTV Camera',type:'surveillance',ico:'�
 // AURA Anchors — compass, AR card building, spatial positioning
 
 function buildCompass(){const s=document.getElementById('cs');s.innerHTML='';for(let i=0;i<720;i+=5){const el=document.createElement('span');el.className='ct';const m=i%360;if(m%90===0){el.classList.add('mj');el.textContent=['N','E','S','W'][m/90]}else if(m%45===0){el.classList.add('mj');el.textContent=['NE','SE','SW','NW'][(m/45-1)/2|0]}else if(m%30===0){el.textContent=m}else{el.textContent='.'}s.appendChild(el)}}
-function updateCompass(){const s=document.getElementById('cs'),w=document.getElementById('cw');s.style.transform='translateX('+(-(smoothH%360)*s.scrollWidth/720+w.offsetWidth/2)+'px)';const dirs=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];document.getElementById('v-hdg').textContent=dirs[Math.round(smoothH/22.5)%16]+' '+Math.round(smoothH).toString().padStart(3,'0')}
+function updateCompass(){const s=document.getElementById('cs'),w=document.getElementById('cw');s.style.transform='translateX('+(-(smoothH%360)*s.scrollWidth/720+w.offsetWidth/2)+'px)';const dirs=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];// heading shown in compass strip only}
 
 function buildAnchors(){
   const layer=document.getElementById('anc-layer');layer.innerHTML='';
@@ -574,17 +549,61 @@ function mkDesc(p){
 
 function updateAnchors(){
   const w=window.innerWidth,h=window.innerHeight,hw=FOV_H/2,hv=FOV_V/2;let vis=0;
+  const MAX_VISIBLE = 8; // max anchors shown at once to reduce clutter
+  
+  // Score all anchors for priority
+  const scored = [];
   document.querySelectorAll('.anc').forEach(el=>{
     const b=parseFloat(el.dataset.bearing)||0,ev=parseFloat(el.dataset.elev)||0;
     const dh=bdiff(b,smoothH),dv=ev-smoothP;
-    if(Math.abs(dh)<hw+10&&Math.abs(dv)<hv+14){
-      el.style.left=(w/2+(dh/hw)*(w/2))+'px';el.style.top=(h/2-(dv/hv)*(h/2)+20)+'px';
-      const edge=Math.max(Math.abs(dh)/hw,Math.abs(dv)/hv);
-      const alpha=Math.pow(Math.max(0,1-edge),1.3);
-      el.style.opacity=alpha.toFixed(3);el.classList.toggle('vis',alpha>0.04);vis++;
-    }else{el.style.opacity='0';el.classList.remove('vis')}
+    const inFov = Math.abs(dh)<hw+10&&Math.abs(dv)<hv+14;
+    
+    // Parse distance from dataset
+    const lat=parseFloat(el.dataset.lat),lon=parseFloat(el.dataset.lon);
+    const dist = (lat&&lon) ? hav(uLat,uLon,lat,lon) : 9999;
+    
+    // Priority score: lower = more important
+    let priority = dist; // base: closer = better
+    const cls = el.className;
+    // Boost priority for certain types
+    if(cls.includes('vr')) priority *= 0.3; // surveillance/police — always important
+    if(cls.includes('incident-anc')) priority *= 0.1; // incidents — critical
+    if(cls.includes('vo') && driveMode) priority *= 0.5; // traffic — important when driving
+    if(cls.includes('vo') && !driveMode) priority *= 3; // traffic — hide when walking
+    
+    // In drive mode, suppress non-drive stuff (cafes, parks far away)
+    if(driveMode && !cls.includes('vr') && !cls.includes('vo') && !cls.includes('incident') && dist > 300) {
+      priority *= 5; // push way down
+    }
+    
+    scored.push({el, dh, dv, inFov, dist, priority});
   });
-  document.getElementById('v-anc').textContent=vis;
+  
+  // Sort by priority
+  scored.sort((a,b) => a.priority - b.priority);
+  
+  let shown = 0;
+  scored.forEach(({el, dh, dv, inFov, dist, priority}) => {
+    if(inFov && shown < MAX_VISIBLE){
+      el.style.left=(w/2+(dh/(FOV_H/2))*(w/2))+'px';
+      el.style.top=(h/2-(dv/(FOV_V/2))*(h/2)+20)+'px';
+      const edge=Math.max(Math.abs(dh)/(FOV_H/2),Math.abs(dv)/(FOV_V/2));
+      // Fade based on distance too — close stuff is bright, far stuff dims
+      const distFade = dist < 100 ? 1 : dist < 300 ? 0.8 : dist < 600 ? 0.55 : 0.3;
+      const alpha=Math.pow(Math.max(0,1-edge),1.3) * distFade;
+      // Scale cards by distance — closer = larger
+      const scale = dist < 80 ? 1.1 : dist < 200 ? 1 : dist < 500 ? 0.85 : 0.7;
+      el.style.opacity=alpha.toFixed(3);
+      el.style.transform=`translate(-50%,-50%) scale(${scale})`;
+      el.classList.toggle('vis',alpha>0.04);
+      // Update live distance display
+      const distEl = el.querySelector('.dist-live');
+      if(distEl) distEl.textContent = dist>=1000?(dist/1000).toFixed(1)+'km':dist+'m';
+      shown++;vis++;
+    }else{
+      el.style.opacity='0';el.classList.remove('vis');
+    }
+  });
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1080,8 +1099,7 @@ async function smartOsmUpdate() {
       places = newPlaces;
       lastOsmLat = uLat; lastOsmLon = uLon;
       buildAnchors();
-      document.getElementById('v-anc').textContent = '↻';
-      setTimeout(() => document.getElementById('v-anc').textContent = places.length, 1200);
+      // anchor count update removed — UI element stripped
     }
   } catch(e) { /* keep existing anchors */ }
 }
@@ -1142,7 +1160,47 @@ async function tagHere(label, icon) {
   } catch(e) { showToast('Tag failed — check connection'); }
 }
 
-// Tag popup — launched from the center reticle tap
+// Reticle tap — scan what's directly ahead
+function reticleTap() {
+  doFlash(); playTone(550, 0.05, 0.1);
+  
+  // Find places within ±20° of current heading, sorted by distance
+  const ahead = places.filter(p => {
+    const diff = Math.abs(bdiff(p.bearing, smoothH));
+    return diff < 20;
+  }).sort((a,b) => a.dist - b.dist);
+  
+  // Also check detected objects
+  const detCount = tracker.objects.size;
+  
+  if (ahead.length === 0 && detCount === 0) {
+    auraSpeak("Nothing ahead. Clear.", true);
+    showToast('Scan: clear ahead');
+    return;
+  }
+  
+  // Build scan result
+  const nearest = ahead[0];
+  if (nearest) {
+    const ds = nearest.dist >= 1000 ? (nearest.dist/1000).toFixed(1)+' k' : nearest.dist + ' metres';
+    const dir = nearest.bearing > smoothH ? 'slightly right' : nearest.bearing < smoothH ? 'slightly left' : 'straight on';
+    auraSpeak(nearest.name + ', ' + ds + ' ' + dir + '.', true);
+    // Open its popup
+    const ancEl = document.getElementById('an-' + nearest.id);
+    if (ancEl && ancEl._detail) openPopup(nearest.id);
+    else showToast(nearest.ico + ' ' + nearest.name + ' — ' + ds);
+  }
+  
+  if (detCount > 0) {
+    const objs = [...tracker.objects.values()].map(o => o.cls).reduce((acc, cls) => {
+      acc[cls] = (acc[cls]||0) + 1; return acc;
+    }, {});
+    const summary = Object.entries(objs).map(([cls,n]) => n > 1 ? n + ' ' + cls + 's' : cls).join(', ');
+    showToast('Detected: ' + summary);
+  }
+}
+
+// Tag popup — launched from the center reticle long-press
 function openTagDialog() {
   const labels = ['Here!','Meet here','Watch out','Road closed','Police ahead','Good food','Landmark'];
   const icons =  ['📍','👋','⚠️','🚧','🚔','🍔','⭐'];
@@ -1186,12 +1244,25 @@ function doFlash(){const f=document.getElementById('flash');f.classList.add('on'
 let toastT;function showToast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('on');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('on'),3200)}
 
 function updateSpeedUI(){
-  const mph=speedMph,sv=document.getElementById('spd-val'),blk=document.getElementById('spd-you');
+  const mph=speedMph;
+  const sv=document.getElementById('spd-val'),blk=document.getElementById('spd-you');
+  const cluster=document.getElementById('speed-cluster');
+  const trafficEl=document.getElementById('traffic-strip');
+  
+  // Auto drive mode: >15mph = driving, <8mph for 5s = walking
+  const wasDriving = driveMode;
+  if(mph > 15) driveMode = true;
+  else if(mph < 8) driveMode = false;
+  
+  // Show speed cluster only when moving meaningfully
+  if(cluster) cluster.style.display = mph > 2 ? 'flex' : 'none';
+  
+  // Traffic strip only in drive mode
+  if(trafficEl && !driveMode) trafficEl.style.display = 'none';
+  
   sv.textContent=Math.round(mph);
   blk.classList.remove('warn','alert');
   if(mph>65)blk.classList.add('alert');else if(mph>45)blk.classList.add('warn');
-  document.getElementById('alt-val').textContent=altFt!=null?altFt:'--';
-  document.getElementById('acc-val').textContent=gpsAcc!=null?gpsAcc:'--';
 }
 
 function drawRadar(){
@@ -1291,42 +1362,10 @@ function tickDetFps() {
 }
 
 async function updateSysPanel() {
-  // Battery
+  // Sys panel removed from UI — data still collected for voice queries
   if (navigator.getBattery) {
-    try {
-      const bat = await navigator.getBattery();
-      const pct = Math.round(bat.level * 100);
-      const bv = document.getElementById('sys-batt');
-      if (bv) {
-        bv.textContent = pct + '%' + (bat.charging ? ' ⚡' : '');
-        bv.className = 'sys-val' + (pct < 20 ? ' crit' : pct < 40 ? ' warn' : '');
-      }
-    } catch(e) {}
+    try { const bat = await navigator.getBattery(); window._auraBatt = Math.round(bat.level*100) + '%' + (bat.charging?' ⚡':''); } catch(e){}
   }
-  // GPS accuracy
-  const gv = document.getElementById('sys-gps');
-  if (gv && gpsAcc != null) {
-    gv.textContent = gpsAcc + 'm';
-    gv.className = 'sys-val' + (gpsAcc > 30 ? ' warn' : gpsAcc > 60 ? ' crit' : '');
-  }
-  // Detection FPS
-  const fv = document.getElementById('sys-fps');
-  if (fv) {
-    fv.textContent = detFpsDisplay;
-    fv.className = 'sys-val' + (detFpsDisplay < 3 ? ' warn' : '');
-  }
-  // Object count
-  const ov = document.getElementById('sys-obj');
-  if (ov) ov.textContent = objectCount;
-  // Network
-  const nv = document.getElementById('sys-net');
-  if (nv && navigator.connection) {
-    const c = navigator.connection;
-    nv.textContent = (c.effectiveType || '?').toUpperCase() + (c.downlink ? ' ' + c.downlink + 'M' : '');
-  }
-  // Anchor count
-  const av = document.getElementById('sys-anc');
-  if (av) av.textContent = places.length + userAnchors.length;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1638,8 +1677,7 @@ function buildAuraContext() {
   }
 
   // System
-  const batEl = document.getElementById('sys-batt');
-  const battery = batEl ? batEl.textContent : 'unknown';
+  const battery = window._auraBatt || 'unknown';
   const visionMode = VISION_LABELS[VISION_MODES[visionModeIdx]] || 'Normal';
 
   return `[AURA SYSTEM CONTEXT — LIVE SENSOR DATA]
@@ -1818,7 +1856,7 @@ function localFallback(cmd) {
   }
   
   if (c.includes('status') || c.includes('system') || c.includes('report') || c.includes('diagnostic')) {
-    const bat = document.getElementById('sys-batt')?.textContent || 'unknown';
+    const bat = window._auraBatt || 'unknown';
     return 'All systems operational. Battery at ' + bat + '. Tracking ' + tracker.objects.size + ' objects in view, ' + places.length + ' anchors on the map. GPS accuracy ' + (gpsAcc || 'unknown') + ' meters. Detection running at ' + detFpsDisplay + ' frames per second.';
   }
 
@@ -2337,7 +2375,7 @@ function startLoop(){
     if(frame%3===0){updateCompass();drawRadar();updateSpeedUI()}
     if(frame%600===0){ smartOsmUpdate(); } // check every ~10s
     if(frame%180===0){ checkProactiveAlerts(); } // check every ~3s
-    if(frame%60===0){const n=new Date(),h=n.getHours(),m=n.getMinutes().toString().padStart(2,'0');document.getElementById('v-time').textContent=(h>12?h-12:h||12)+':'+m;document.getElementById('v-pitch').textContent=(smoothP>=0?'+':'')+Math.round(smoothP)}
+    if(frame%60===0){const n=new Date(),h=n.getHours(),m=n.getMinutes().toString().padStart(2,'0');document.getElementById('v-time').textContent=(h>12?h-12:h||12)+':'+m;/* pitch display removed */}
   })();
 }
 
