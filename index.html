@@ -520,7 +520,7 @@ function getMock(){return[{id:'m1',name:'CCTV Camera',type:'surveillance',ico:'ð
 // AURA Anchors â€” compass, AR card building, spatial positioning
 
 function buildCompass(){const s=document.getElementById('cs');s.innerHTML='';for(let i=0;i<720;i+=5){const el=document.createElement('span');el.className='ct';const m=i%360;if(m%90===0){el.classList.add('mj');el.textContent=['N','E','S','W'][m/90]}else if(m%45===0){el.classList.add('mj');el.textContent=['NE','SE','SW','NW'][(m/45-1)/2|0]}else if(m%30===0){el.textContent=m}else{el.textContent='.'}s.appendChild(el)}}
-function updateCompass(){const s=document.getElementById('cs'),w=document.getElementById('cw');s.style.transform='translateX('+(-(smoothH%360)*s.scrollWidth/720+w.offsetWidth/2)+'px)';const dirs=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];// heading shown in compass strip only}
+function updateCompass(){const s=document.getElementById('cs'),w=document.getElementById('cw');s.style.transform='translateX('+(-(smoothH%360)*s.scrollWidth/720+w.offsetWidth/2)+'px)';}
 
 function buildAnchors(){
   const layer=document.getElementById('anc-layer');layer.innerHTML='';
