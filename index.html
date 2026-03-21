@@ -429,6 +429,24 @@ function brg(a,b,c,d){const r=Math.PI/180,dO=(d-b)*r,y=Math.sin(dO)*Math.cos(c*r
 function bdiff(a,b){return((a-b)+540)%360-180}
 const degC=d=>['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'][Math.round(d/22.5)%16];
 
+// Distance formatter: meters → American (feet/miles)
+function fmtDist(meters) {
+  const ft = meters * 3.281;
+  if (ft < 500) return Math.round(ft) + 'ft';
+  const mi = meters / 1609.344;
+  if (mi < 0.1) return Math.round(ft) + 'ft';
+  return mi.toFixed(1) + 'mi';
+}
+// Spoken distance (for voice)
+function fmtDistSpoken(meters) {
+  const ft = meters * 3.281;
+  if (ft < 500) return Math.round(ft) + ' feet';
+  const mi = meters / 1609.344;
+  if (mi < 0.1) return Math.round(ft) + ' feet';
+  if (mi < 1) return mi.toFixed(1) + ' miles';
+  return mi.toFixed(1) + ' miles';
+}
+
 async function fetchLocName(lat,lon){try{const r=await fetch('https://nominatim.openstreetmap.org/reverse?lat='+lat+'&lon='+lon+'&format=json',{headers:{'User-Agent':'AURA-AR/3.0'}});const d=await r.json();const a=d.address||{};const road=a.road||a.pedestrian||a.neighbourhood||'';const city=a.city||a.town||a.village||'';document.getElementById('np-name').textContent=(road||city||'Live AR').toUpperCase();document.getElementById('np-sub').innerHTML='<span class="lpip"></span>'+(city||'AR LAYER').toUpperCase()}catch(e){}}
 
 // ════════ gps.js ════════
@@ -443,7 +461,7 @@ function onGPS(pos){
   prevLat=lat;prevLon=lon;prevTime=now;uLat=lat;uLon=lon;
   document.querySelectorAll('.anc[data-lat]').forEach(el=>{
     const d=hav(lat,lon,parseFloat(el.dataset.lat),parseFloat(el.dataset.lon));
-    const ds=d>=1000?(d/1000).toFixed(1)+'km':d+'m';
+    const ds=fmtDist(d);
     const dt=el.querySelector('.dist-live');if(dt)dt.textContent='dist: '+ds;
     el.dataset.bearing=brg(lat,lon,parseFloat(el.dataset.lat),parseFloat(el.dataset.lon)).toString();
   });
@@ -459,7 +477,7 @@ async function fetchWeather(lat,lon){
   const WD={0:'Clear',1:'Mostly Clear',2:'Partly Cloudy',3:'Overcast',45:'Foggy',51:'Drizzle',53:'Drizzle',61:'Rain',63:'Rain',65:'Heavy Rain',71:'Snow',73:'Snow',80:'Showers',95:'Thunderstorm'};
   const WI={0:'☀️',1:'🌤️',2:'⛅',3:'☁️',45:'🌫️',61:'🌧️',63:'🌧️',71:'❄️',80:'🌦️',95:'⛈️'};
   const dc=d=>['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'][Math.round(d/22.5)%16];
-  const vis=c.visibility?(c.visibility>=1000?(c.visibility/1000).toFixed(1)+'km':c.visibility+'m'):'--';
+  const vis=c.visibility?fmtDist(c.visibility):'--';
   return{tf:tF+'F',tF,fF,desc:WD[c.weather_code]||'Clear',icon:WI[c.weather_code]||'🌡️',hum:c.relative_humidity_2m,wind:Math.round(c.wind_speed_10m),wd:dc(c.wind_direction_10m||0),prec:c.precipitation,vis};
 }
 function updateWx(){
@@ -525,7 +543,7 @@ function updateCompass(){const s=document.getElementById('cs'),w=document.getEle
 function buildAnchors(){
   const layer=document.getElementById('anc-layer');layer.innerHTML='';
   if(weatherData.tf)mkAnc(layer,{id:'wx',bearing:2,elev:18,cls:'vy',w:'165px',stem:80,sh:'-1s',lat:uLat+0.0015,lon:uLon,ico:weatherData.icon,cat:'WEATHER',val:weatherData.tf,sub:weatherData.desc+' feels '+weatherData.fF+'F',dist:'--',detail:{ico:weatherData.icon,type:'Live Weather - Open-Meteo',title:'Current Conditions',stats:[{v:weatherData.tf,l:'Temp'},{v:weatherData.hum+'%',l:'Humidity'},{v:weatherData.wind+' mph',l:'Wind '+weatherData.wd}],desc:weatherData.desc+'. Feels '+weatherData.fF+'F. Vis '+weatherData.vis+'.'}});
-  places.forEach((p,i)=>{const ds=p.dist>=1000?(p.dist/1000).toFixed(1)+'km':p.dist+'m';mkAnc(layer,{id:p.id,bearing:p.bearing,elev:p.elev,cls:p.cls,w:'158px',stem:48+Math.random()*40,sh:-(i*1.3)+'s',lat:p.lat,lon:p.lon,ico:p.ico,cat:p.cat,val:p.name.length>15?p.name.slice(0,14)+'...':p.name,sub:p.cat+' - '+ds,dist:ds,detail:{ico:p.ico,type:p.cat+' - OpenStreetMap',title:p.name,stats:[{v:ds,l:'Distance'},{v:Math.round(p.bearing)+'',l:'Bearing'},{v:p.type.replace(/_/g,' '),l:'Type'}],desc:mkDesc(p)}})});
+  places.forEach((p,i)=>{const ds=fmtDist(p.dist);mkAnc(layer,{id:p.id,bearing:p.bearing,elev:p.elev,cls:p.cls,w:'158px',stem:48+Math.random()*40,sh:-(i*1.3)+'s',lat:p.lat,lon:p.lon,ico:p.ico,cat:p.cat,val:p.name.length>15?p.name.slice(0,14)+'...':p.name,sub:p.cat+' - '+ds,dist:ds,detail:{ico:p.ico,type:p.cat+' - OpenStreetMap',title:p.name,stats:[{v:ds,l:'Distance'},{v:Math.round(p.bearing)+'',l:'Bearing'},{v:p.type.replace(/_/g,' '),l:'Type'}],desc:mkDesc(p)}})});
 }
 
 function mkAnc(layer,a){
@@ -543,7 +561,7 @@ function mkAnc(layer,a){
 function mkDesc(p){
   const t=p.tags||{},pts=[];
   if(p.cat==='SURVEILLANCE'||p.cat==='SPEED CAM'||p.cat==='TRAFFIC'){pts.push('Active surveillance infrastructure detected.');if(t['surveillance:type'])pts.push('Type: '+t['surveillance:type']);pts.push('Source: OpenStreetMap')}
-  else{if(t.opening_hours)pts.push('Hours: '+t.opening_hours);if(t.phone)pts.push('Phone: '+t.phone);if(t.cuisine)pts.push('Cuisine: '+t.cuisine);if(t['addr:street'])pts.push(t['addr:street']);if(!pts.length)pts.push(p.cat+' at '+p.dist+'m '+degC(p.bearing)+'. Source: OpenStreetMap.')}
+  else{if(t.opening_hours)pts.push('Hours: '+t.opening_hours);if(t.phone)pts.push('Phone: '+t.phone);if(t.cuisine)pts.push('Cuisine: '+t.cuisine);if(t['addr:street'])pts.push(t['addr:street']);if(!pts.length)pts.push(p.cat+' at '+fmtDist(p.dist)+' '+degC(p.bearing)+'. Source: OpenStreetMap.')}
   return pts.join(' - ');
 }
 
@@ -598,7 +616,7 @@ function updateAnchors(){
       el.classList.toggle('vis',alpha>0.04);
       // Update live distance display
       const distEl = el.querySelector('.dist-live');
-      if(distEl) distEl.textContent = dist>=1000?(dist/1000).toFixed(1)+'km':dist+'m';
+      if(distEl) distEl.textContent = fmtDist(dist);
       shown++;vis++;
     }else{
       el.style.opacity='0';el.classList.remove('vis');
@@ -966,7 +984,7 @@ function drawTracked(objects, vw, vh) {
       const distM = estimateDistM(bw, realW, cw, vw);
       if (distM) {
         const d = Math.round(distM);
-        distLabel = d < 5 ? ' CLOSE' : d > 150 ? ' >150m' : ' ~'+d+'m';
+        distLabel = d < 5 ? ' CLOSE' : d > 150 ? ' >'+Math.round(d*3.281)+'ft' : ' ~'+Math.round(d*3.281)+'ft';
       }
     }
 
@@ -1129,7 +1147,7 @@ function addUserAnchorNodes() {
   userAnchors.forEach(a => {
     if (document.getElementById('an-ua-'+a.id)) return; // already added
     const dist = hav(uLat,uLon,a.lat,a.lon);
-    const ds = dist >= 1000 ? (dist/1000).toFixed(1)+'km' : dist+'m';
+    const ds = fmtDist(dist);
     mkAnc(layer, {
       id: 'ua-'+a.id, bearing: brg(uLat,uLon,a.lat,a.lon),
       elev: 10, cls: 'vb', w: '155px', stem: 60, sh: '0s',
@@ -1182,7 +1200,7 @@ function reticleTap() {
   // Build scan result
   const nearest = ahead[0];
   if (nearest) {
-    const ds = nearest.dist >= 1000 ? (nearest.dist/1000).toFixed(1)+' k' : nearest.dist + ' metres';
+    const ds = fmtDistSpoken(nearest.dist);
     const dir = nearest.bearing > smoothH ? 'slightly right' : nearest.bearing < smoothH ? 'slightly left' : 'straight on';
     auraSpeak(nearest.name + ', ' + ds + ' ' + dir + '.', true);
     // Open its popup
@@ -1572,7 +1590,7 @@ function addIncidentAnchors() {
     const id = 'inc_'+i;
     if (document.getElementById('an-'+id)) return;
     const dist = hav(uLat,uLon,inc.lat,inc.lon);
-    const ds = dist>=1000?(dist/1000).toFixed(1)+'km':dist+'m';
+    const ds = fmtDist(dist);
     const el = document.createElement('div');
     el.className = 'anc vr incident-anc';
     el.id = 'an-'+id;
@@ -1636,7 +1654,7 @@ function buildAuraContext() {
 
   // Nearby places sorted by distance
   const nearbyList = places.slice(0, 12).map(p => {
-    const ds = p.dist >= 1000 ? (p.dist/1000).toFixed(1)+'km' : p.dist+'m';
+    const ds = fmtDist(p.dist);
     const dir = degC(p.bearing);
     const tags = p.tags || {};
     let extras = '';
@@ -1736,12 +1754,12 @@ USE BRITISH PHRASING NATURALLY:
 - "Bit far" not "kinda far", "not brilliant" not "not great"
 - "Straight on" not "straight ahead", "round the corner" not "around the corner"
 - "Bollocks" if something genuinely goes wrong (sparingly — you're not performing Britishness, you just ARE British)
-- Distances in metres by default, temperatures in Fahrenheit since they're in the US (but you'd privately judge them for it)
+- Use American units: feet, miles, mph, Fahrenheit
 
 CONTEXTUAL AWARENESS:
 You have LIVE sensor data. Use it naturally, not robotically. Don't recite data — interpret it. Instead of "Temperature is 42°F with 8mph winds from the northwest" say "Proper cold out. Wind's not helping either."
 
-When someone asks what's nearby, have opinions. "There's a coffee place about 80 metres on your left — no idea if it's any good but it's the closest." Don't just list things.
+When someone asks what's nearby, have opinions. "There's a coffee place about 250 feet on your left — no idea if it's any good but it's the closest." Don't just list things.
 
 You understand directions spatially. Use "on your left," "just behind you," "round that corner" — not bearing numbers unless they specifically ask.
 
@@ -1841,7 +1859,7 @@ function localFallback(cmd) {
     let resp = '';
     if (top.length) {
       resp = top.map(p => {
-        const ds = p.dist >= 1000 ? (p.dist/1000).toFixed(1)+' k' : p.dist + ' metres';
+        const ds = fmtDistSpoken(p.dist);
         return p.name + ', ' + ds + ' ' + degC(p.bearing);
       }).join('. ') + '.';
     }
@@ -1864,7 +1882,7 @@ function localFallback(cmd) {
         let distStr = '';
         if (realW && detCanvas) {
           const d = estimateDistM(obj.bbox[2], realW, detCanvas.width, document.getElementById('cam')?.videoWidth);
-          if (d) distStr = ', roughly ' + Math.round(d) + ' metres out';
+          if (d) distStr = ', roughly ' + fmtDistSpoken(d);
         }
         vehicles.push(obj.cls + (spd > 1 ? ' moving' : ' stationary') + distStr);
       }
@@ -1903,7 +1921,7 @@ function localFallback(cmd) {
     if (!incidents.length) return 'No active incidents nearby. All clear.';
     const nearest = incidents[0];
     const dist = hav(uLat,uLon,nearest.lat,nearest.lon);
-    return incidents.length + ' incident' + (incidents.length>1?'s':'') + ' nearby. Closest is ' + nearest.type.toLowerCase() + ', ' + dist + ' metres away.';
+    return incidents.length + ' incident' + (incidents.length>1?'s':'') + ' nearby. Closest is ' + nearest.type.toLowerCase() + ', ' + fmtDistSpoken(dist) + ' away.';
   }
   
   // ── Directions / where ──
@@ -1918,7 +1936,7 @@ function localFallback(cmd) {
     if (query) {
       const match = places.find(p => p.name.toLowerCase().includes(query));
       if (match) {
-        const ds = match.dist >= 1000 ? (match.dist/1000).toFixed(1)+' kilometres' : match.dist + ' metres';
+        const ds = fmtDistSpoken(match.dist);
         return match.name + ' is ' + ds + ' away, ' + degC(match.bearing) + ' from you.';
       }
     }
@@ -1956,7 +1974,7 @@ function localFallback(cmd) {
   // ── Status ──
   if (c.includes('status') || c.includes('system') || c.includes('report') || c.includes('diagnostic')) {
     const bat = window._auraBatt || 'unknown';
-    return 'Battery ' + bat + '. ' + tracker.objects.size + ' objects tracked. ' + places.length + ' places loaded. GPS accuracy ' + (gpsAcc||'--') + 'm. ' + detFpsDisplay + ' fps detection.';
+    return 'Battery ' + bat + '. ' + tracker.objects.size + ' objects tracked. ' + places.length + ' places loaded. GPS accuracy ' + (gpsAcc ? Math.round(gpsAcc*3.281)+'ft' : '--') + '. ' + detFpsDisplay + ' fps detection.';
   }
 
   // ── Time ──
@@ -2405,8 +2423,8 @@ function checkProactiveAlerts() {
       lastProactiveAlert = now;
       const nearest = close[0];
       const dist = hav(uLat,uLon,nearest.lat,nearest.lon);
-      auraSpeak('Bit of a situation up ahead. ' + nearest.type.toLowerCase() + ', about ' + dist + ' metres.', true);
-      if (panelOpen) addMessage('ai', nearest.type + ' at ' + (nearest.address || 'nearby') + '. Roughly ' + dist + ' metres from you. Worth keeping an eye on.');
+      auraSpeak('Bit of a situation up ahead. ' + nearest.type.toLowerCase() + ', about ' + fmtDistSpoken(dist) + '.', true);
+      if (panelOpen) addMessage('ai', nearest.type + ' at ' + (nearest.address || 'nearby') + '. Roughly ' + fmtDistSpoken(dist) + ' from you. Worth keeping an eye on.');
     }
   }
   
