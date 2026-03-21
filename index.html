@@ -1834,43 +1834,150 @@ async function callAuraAI(userMessage) {
 function localFallback(cmd) {
   const c = cmd.toLowerCase();
   
-  if (c.includes('near') || c.includes('around') || c.match(/what.*(here|around)/)) {
+  // ── What's nearby ──
+  if (c.includes('near') || c.includes('around') || c.match(/what.*(here|around)/) || c.includes('what do you see') || c.includes('scan')) {
     const top = places.slice(0,4);
-    if (!top.length) return 'No nearby locations loaded yet. Still acquiring satellite data.';
-    return 'I see ' + top.length + ' spots close by. ' + top.map(p => {
-      const ds = p.dist >= 1000 ? (p.dist/1000).toFixed(1)+' k' : p.dist + ' meters';
-      return p.name + ', ' + ds + ' to the ' + degC(p.bearing);
-    }).join('. ') + '. Want details on any of these?';
+    const objs = tracker.objects.size;
+    let resp = '';
+    if (top.length) {
+      resp = top.map(p => {
+        const ds = p.dist >= 1000 ? (p.dist/1000).toFixed(1)+' k' : p.dist + ' metres';
+        return p.name + ', ' + ds + ' ' + degC(p.bearing);
+      }).join('. ') + '.';
+    }
+    if (objs > 0) {
+      const types = {};
+      for (const obj of tracker.objects.values()) { types[obj.cls] = (types[obj.cls]||0)+1; }
+      const summary = Object.entries(types).map(([k,v]) => v > 1 ? v+' '+k+'s' : 'a '+k).join(', ');
+      resp += (resp ? ' Also detecting ' : 'I can see ') + summary + ' in frame.';
+    }
+    return resp || 'Nothing nearby yet. Still scanning.';
   }
   
-  if (c.includes('speed') || c.includes('fast')) {
+  // ── Cars / vehicles / detection ──
+  if (c.includes('car') || c.includes('vehicle') || c.includes('truck') || c.includes('bus') || c.includes('detect') || c.includes('tracking')) {
+    const vehicles = [];
+    for (const obj of tracker.objects.values()) {
+      if (VEHICLE_CLASSES.has(obj.cls)) {
+        const spd = Math.sqrt(obj.velocity.vx**2 + obj.velocity.vy**2);
+        const realW = REAL_WIDTHS[obj.cls];
+        let distStr = '';
+        if (realW && detCanvas) {
+          const d = estimateDistM(obj.bbox[2], realW, detCanvas.width, document.getElementById('cam')?.videoWidth);
+          if (d) distStr = ', roughly ' + Math.round(d) + ' metres out';
+        }
+        vehicles.push(obj.cls + (spd > 1 ? ' moving' : ' stationary') + distStr);
+      }
+    }
+    if (!vehicles.length) return 'No vehicles detected in frame right now.';
+    return 'Tracking ' + vehicles.length + ' vehicle' + (vehicles.length>1?'s':'') + '. ' + vehicles.join('. ') + '.';
+  }
+  
+  // ── People ──
+  if (c.includes('people') || c.includes('person') || c.includes('crowd') || c.includes('how many')) {
+    const people = [...tracker.objects.values()].filter(o => o.cls === 'person');
+    if (!people.length) return 'No people detected in frame.';
+    return people.length + ' person' + (people.length>1?'s':'') + ' in view.';
+  }
+  
+  // ── Speed ──
+  if (c.includes('speed') || c.includes('fast') || c.includes('how quick') || c.includes('mph')) {
     const spd = Math.round(speedMph);
-    let resp = 'You\'re doing ' + spd + ' miles per hour.';
-    if (trafficData?.currentSpeedMph) resp += ' Traffic around you is flowing at ' + trafficData.currentSpeedMph + '.';
-    if (trafficData?.speedLimitMph && spd > trafficData.speedLimitMph) resp += ' Heads up, you\'re above the limit.';
+    let resp = spd < 2 ? 'You\'re stationary.' : 'You\'re doing ' + spd + ' mph.';
+    if (trafficData?.currentSpeedMph) resp += ' Traffic flow is ' + trafficData.currentSpeedMph + ' mph.';
+    if (trafficData?.speedLimitMph) {
+      resp += ' Limit here is ' + trafficData.speedLimitMph + '.';
+      if (spd > trafficData.speedLimitMph + 5) resp += ' You\'re over.';
+    }
     return resp;
   }
   
-  if (c.includes('weather') || c.includes('temperature') || c.includes('rain') || c.includes('cold') || c.includes('hot')) {
-    if (!weatherData.tf) return 'Weather data is still loading. Give me a moment.';
-    return 'It\'s ' + weatherData.tF + ' degrees and ' + weatherData.desc.toLowerCase() + ', feels like ' + weatherData.fF + '. Wind is ' + weatherData.wind + ' mph from the ' + weatherData.wd + '. Visibility ' + weatherData.vis + '.';
+  // ── Weather ──
+  if (c.includes('weather') || c.includes('temperature') || c.includes('rain') || c.includes('cold') || c.includes('hot') || c.includes('wind')) {
+    if (!weatherData.tf) return 'Weather data still loading.';
+    return weatherData.tF + ' degrees, ' + weatherData.desc.toLowerCase() + '. Feels like ' + weatherData.fF + '. Wind ' + weatherData.wind + ' mph ' + weatherData.wd + '.';
   }
   
+  // ── Incidents ──
+  if (c.includes('incident') || c.includes('emergency') || c.includes('danger') || c.includes('accident') || c.includes('safe')) {
+    if (!incidents.length) return 'No active incidents nearby. All clear.';
+    const nearest = incidents[0];
+    const dist = hav(uLat,uLon,nearest.lat,nearest.lon);
+    return incidents.length + ' incident' + (incidents.length>1?'s':'') + ' nearby. Closest is ' + nearest.type.toLowerCase() + ', ' + dist + ' metres away.';
+  }
+  
+  // ── Directions / where ──
+  if (c.includes('where am i') || c.includes('location') || c.includes('address')) {
+    const loc = document.getElementById('np-name')?.textContent || 'Unknown';
+    return 'You\'re at ' + loc + '. Coordinates ' + uLat.toFixed(4) + ', ' + uLon.toFixed(4) + '. Heading ' + degC(smoothH) + '.';
+  }
+  
+  // ── Distance to specific place ──
+  if (c.includes('how far') || c.includes('distance')) {
+    const query = c.replace(/how far|distance|to|is|the|from|here/gi, '').trim();
+    if (query) {
+      const match = places.find(p => p.name.toLowerCase().includes(query));
+      if (match) {
+        const ds = match.dist >= 1000 ? (match.dist/1000).toFixed(1)+' kilometres' : match.dist + ' metres';
+        return match.name + ' is ' + ds + ' away, ' + degC(match.bearing) + ' from you.';
+      }
+    }
+    return 'Couldn\'t find that nearby. Try asking what\'s around you first.';
+  }
+  
+  // ── Vision modes ──
+  if (c.includes('night') || c.includes('dark')) {
+    visionModeIdx = VISION_MODES.indexOf('nv') - 1; cycleVisionMode();
+    return 'Night vision on.';
+  }
+  if (c.includes('thermal') || c.includes('heat')) {
+    visionModeIdx = VISION_MODES.indexOf('thermal') - 1; cycleVisionMode();
+    return 'Thermal imaging on.';
+  }
+  if (c.includes('normal') || c.includes('regular') || c.includes('clear')) {
+    visionModeIdx = VISION_MODES.indexOf('normal') - 1; cycleVisionMode();
+    return 'Normal vision.';
+  }
+  
+  // ── Tag ──
+  if (c.includes('tag') || c.includes('mark') || c.includes('save this') || c.includes('remember this')) {
+    const label = c.replace(/tag|mark|save|remember|this|location|here|place|spot|as|a|an/gi,'').trim() || 'Marked';
+    tagHere(label, '📍');
+    return 'Tagged as ' + label + '.';
+  }
+  
+  // ── Zoom ──
+  const zoomMatch = c.match(/(zoom|magnif)\D*(\d+)/);
+  if (zoomMatch) {
+    setZoom(parseInt(zoomMatch[2]));
+    return 'Zoom ' + zoomMatch[2] + 'x.';
+  }
+  
+  // ── Status ──
   if (c.includes('status') || c.includes('system') || c.includes('report') || c.includes('diagnostic')) {
     const bat = window._auraBatt || 'unknown';
-    return 'All systems operational. Battery at ' + bat + '. Tracking ' + tracker.objects.size + ' objects in view, ' + places.length + ' anchors on the map. GPS accuracy ' + (gpsAcc || 'unknown') + ' meters. Detection running at ' + detFpsDisplay + ' frames per second.';
+    return 'Battery ' + bat + '. ' + tracker.objects.size + ' objects tracked. ' + places.length + ' places loaded. GPS accuracy ' + (gpsAcc||'--') + 'm. ' + detFpsDisplay + ' fps detection.';
   }
 
+  // ── Time ──
   if (c.includes('time') || c.includes('what time')) {
     const now = new Date();
-    return 'It\'s ' + now.toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit'}) + ' on ' + now.toLocaleDateString('en-US', {weekday:'long', month:'long', day:'numeric'}) + '.';
+    return now.toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit'}) + '.';
   }
   
-  if (c.includes('help') || c.includes('what can you')) {
-    return 'I can tell you about anything nearby — restaurants, traffic, weather, incidents. I can switch your vision mode, tag locations, report system status, or just chat. Try asking me something specific about where you are.';
+  // ── Help ──
+  if (c.includes('help') || c.includes('what can')) {
+    return 'Ask me about cars nearby, speed, weather, incidents, or say tag to mark a spot. I can switch to night vision or thermal too.';
   }
   
-  return 'I heard you but I\'m running in offline mode. For full conversational AI, make sure the API connection is active. In the meantime, try asking about what\'s nearby, your speed, the weather, or system status.';
+  // ── Drive mode ──
+  if (c.includes('drive mode') || c.includes('driving')) {
+    driveMode = !driveMode;
+    return 'Drive mode ' + (driveMode ? 'on' : 'off') + '.';
+  }
+  
+  // ── Catch-all ──
+  return 'Try: what\'s nearby, any cars, how fast, weather, incidents, or tag this spot.';
 }
 
 // ── Execute commands detected in AI response ────────────────
@@ -1985,28 +2092,14 @@ async function processMessage(text) {
   isThinking = true;
   playTone(440, 0.04, 0.08);
 
-  try {
-    const aiResponse = await callAuraAI(userText);
-    isThinking = false;
-    setVoiceStatus('speaking');
-    addMessage('ai', aiResponse);
-    
-    // Execute any actions mentioned in the response
-    executeAuraActions(aiResponse);
-    
-    // Speak the response
-    auraSpeak(aiResponse, true);
-    
-    // Update suggestions based on conversation
-    updateSuggestions();
-  } catch(e) {
-    isThinking = false;
-    setVoiceStatus('');
-    addMessage('system', 'Connection issue — retrying with local mode');
-    const fallback = localFallback(userText);
-    addMessage('ai', fallback);
-    auraSpeak(fallback, true);
-  }
+  // Use local AI directly — no API call, instant response
+  const aiResponse = localFallback(userText);
+  isThinking = false;
+  setVoiceStatus('speaking');
+  addMessage('ai', aiResponse);
+  executeAuraActions(aiResponse);
+  auraSpeak(aiResponse, true);
+  updateSuggestions();
 }
 
 function handleTextInput(presetText) {
