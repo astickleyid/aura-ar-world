@@ -394,6 +394,24 @@ function loadTF() {
   </div>
 </div>
 
+<!-- ═══ DRIVE MODE HUD BAR ═══ -->
+<div id="drive-hud" style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:6;pointer-events:none;
+  background:linear-gradient(to top,rgba(0,2,10,.5) 0%,transparent 100%);padding:12px 20px 16px;
+  display:none;align-items:flex-end;justify-content:space-between">
+  <div style="display:flex;align-items:baseline;gap:6px">
+    <div id="dh-speed" style="font-family:'Orbitron',monospace;font-size:36px;font-weight:900;color:#00FFD1;text-shadow:0 0 20px rgba(0,255,209,.4);letter-spacing:-.02em;line-height:1">0</div>
+    <div style="font-size:10px;letter-spacing:.1em;color:rgba(0,255,209,.4)">MPH</div>
+  </div>
+  <div style="text-align:center">
+    <div id="dh-road" style="font-family:'Orbitron',monospace;font-size:8px;letter-spacing:.14em;color:rgba(255,255,255,.3)"></div>
+    <div id="dh-limit" style="font-family:'Orbitron',monospace;font-size:11px;font-weight:700;color:rgba(255,144,48,.6);margin-top:2px"></div>
+  </div>
+  <div style="text-align:right">
+    <div id="dh-objects" style="font-family:'Orbitron',monospace;font-size:14px;font-weight:700;color:rgba(0,255,209,.5)">0</div>
+    <div style="font-size:7px;letter-spacing:.12em;color:rgba(0,255,209,.25)">TRACKED</div>
+  </div>
+</div>
+
 <!-- ═══ VOICE CAPTION + BUTTON ═══ -->
 <div id="voice-caption"></div>
 <div id="voice-ring" onclick="toggleVoice()" oncontextmenu="event.preventDefault();openVoicePanel()" title="Tap to speak · Long-press for chat panel">🎙</div>
@@ -972,6 +990,109 @@ function drawTracked(objects, vw, vh) {
       detCtx.globalAlpha = Math.min(1, fadeAlpha * (age > 3 ? 1 : age/3));
     }
 
+    // ═══ IRON MAN VEHICLE HUD ═══
+    // Only on vehicles in drive mode — shows distance, closing rate, collision warning
+    if (isVehicle && driveMode) {
+      const realW = REAL_WIDTHS[cls];
+      const distM = realW ? estimateDistM(bw, realW, cw, vw) : null;
+      const distFt = distM ? Math.round(distM * 3.281) : null;
+      const speed_px = Math.sqrt(velocity.vx**2 + velocity.vy**2);
+      
+      // ── Distance arc — curved bar below vehicle showing how far ──
+      if (distFt && distFt < 800) {
+        const cx2 = x + w/2, cy2 = y + h + 8;
+        const arcR = w * 0.6;
+        const fill = Math.min(1, distFt / 500); // 0=close, 1=far
+        const arcColor = distFt < 50 ? '#FF4040' : distFt < 150 ? '#FF9030' : '#00FFD1';
+        
+        detCtx.globalAlpha = fadeAlpha * 0.7;
+        detCtx.beginPath();
+        detCtx.arc(cx2, cy2, arcR, Math.PI * 0.15, Math.PI * 0.85, false);
+        detCtx.strokeStyle = 'rgba(255,255,255,0.06)';
+        detCtx.lineWidth = 3;
+        detCtx.stroke();
+        
+        // Fill arc based on distance (shorter = more filled)
+        detCtx.beginPath();
+        const fillAngle = Math.PI * 0.15 + (Math.PI * 0.7) * (1 - fill);
+        detCtx.arc(cx2, cy2, arcR, Math.PI * 0.15, fillAngle, false);
+        detCtx.strokeStyle = arcColor;
+        detCtx.lineWidth = 3;
+        detCtx.shadowColor = arcColor;
+        detCtx.shadowBlur = 8;
+        detCtx.stroke();
+        detCtx.shadowBlur = 0;
+        
+        // Distance text centered under arc
+        detCtx.font = '700 10px "Orbitron", monospace';
+        detCtx.fillStyle = arcColor;
+        detCtx.textAlign = 'center';
+        detCtx.shadowColor = arcColor;
+        detCtx.shadowBlur = 6;
+        detCtx.fillText(distFt + 'ft', cx2, cy2 + arcR + 12);
+        detCtx.shadowBlur = 0;
+        detCtx.textAlign = 'left';
+      }
+      
+      // ── Closing rate indicator — arrow + speed delta ──
+      if (speed_px > 0.8 && distFt) {
+        const approaching = velocity.vy > 0.5; // moving down in frame = approaching
+        const receding = velocity.vy < -0.5;
+        const closingIcon = approaching ? '▼' : receding ? '▲' : '●';
+        const closingColor = approaching ? '#FF4040' : receding ? '#00FFD1' : '#FFD700';
+        const closingText = approaching ? 'CLOSING' : receding ? 'RECEDING' : 'LATERAL';
+        
+        detCtx.globalAlpha = fadeAlpha * 0.8;
+        detCtx.font = '700 8px "Orbitron", monospace';
+        detCtx.fillStyle = closingColor;
+        detCtx.shadowColor = closingColor;
+        detCtx.shadowBlur = 4;
+        detCtx.fillText(closingIcon + ' ' + closingText, x + w + 6, y + h/2);
+        detCtx.shadowBlur = 0;
+      }
+      
+      // ── COLLISION PROXIMITY WARNING — flashing red border when very close + approaching ──
+      if (distFt && distFt < 80 && velocity.vy > 0.3) {
+        detCtx.globalAlpha = fadeAlpha * (0.5 + 0.5 * Math.sin(Date.now() / 100));
+        detCtx.strokeStyle = '#FF4040';
+        detCtx.lineWidth = 3;
+        detCtx.shadowColor = '#FF4040';
+        detCtx.shadowBlur = 20;
+        detCtx.strokeRect(x - 4, y - 4, w + 8, h + 8);
+        detCtx.shadowBlur = 0;
+        
+        // WARNING text
+        detCtx.font = '900 11px "Orbitron", monospace';
+        detCtx.fillStyle = '#FF4040';
+        detCtx.textAlign = 'center';
+        detCtx.shadowColor = '#FF4040';
+        detCtx.shadowBlur = 10;
+        detCtx.fillText('⚠ PROXIMITY', x + w/2, y - 10);
+        detCtx.shadowBlur = 0;
+        detCtx.textAlign = 'left';
+      }
+      
+      detCtx.globalAlpha = Math.min(1, fadeAlpha * (age > 3 ? 1 : age/3));
+    }
+
+    // ═══ PEDESTRIAN PROXIMITY (walk mode) ═══
+    if (cls === 'person' && !driveMode) {
+      const realW = REAL_WIDTHS[cls];
+      const distM = realW ? estimateDistM(bw, realW, cw, vw) : null;
+      if (distM && distM < 5) {
+        detCtx.globalAlpha = fadeAlpha * 0.6;
+        detCtx.strokeStyle = '#FFD700';
+        detCtx.lineWidth = 1;
+        detCtx.setLineDash([2,3]);
+        const pr = Math.max(w, h) * 0.7;
+        detCtx.beginPath();
+        detCtx.arc(x+w/2, y+h/2, pr, 0, Math.PI*2);
+        detCtx.stroke();
+        detCtx.setLineDash([]);
+        detCtx.globalAlpha = Math.min(1, fadeAlpha * (age > 3 ? 1 : age/3));
+      }
+    }
+
     // Label
     const pct = Math.round(score * 100);
     const confLabel = score >= 0.72 ? cls : score >= 0.48 ? cls+'?' : 'object?';
@@ -1266,16 +1387,35 @@ function updateSpeedUI(){
   const sv=document.getElementById('spd-val'),blk=document.getElementById('spd-you');
   const cluster=document.getElementById('speed-cluster');
   const trafficEl=document.getElementById('traffic-strip');
+  const driveHud=document.getElementById('drive-hud');
   
-  // Auto drive mode: >15mph = driving, <8mph for 5s = walking
-  const wasDriving = driveMode;
+  // Auto drive mode
   if(mph > 15) driveMode = true;
   else if(mph < 8) driveMode = false;
   
-  // Show speed cluster only when moving meaningfully
-  if(cluster) cluster.style.display = mph > 2 ? 'flex' : 'none';
+  // Drive mode: show Iron Man bottom HUD
+  if(driveHud) {
+    driveHud.style.display = driveMode ? 'flex' : 'none';
+    if(driveMode) {
+      const dhSpd = document.getElementById('dh-speed');
+      const dhRoad = document.getElementById('dh-road');
+      const dhLimit = document.getElementById('dh-limit');
+      const dhObj = document.getElementById('dh-objects');
+      if(dhSpd) {
+        dhSpd.textContent = Math.round(mph);
+        dhSpd.style.color = mph > 80 ? '#FF4040' : mph > 60 ? '#FF9030' : '#00FFD1';
+      }
+      if(dhRoad && trafficData?.roadName) dhRoad.textContent = trafficData.roadName.toUpperCase();
+      if(dhLimit && trafficData?.speedLimitMph) {
+        dhLimit.textContent = 'LIMIT ' + trafficData.speedLimitMph;
+        dhLimit.style.color = mph > trafficData.speedLimitMph + 5 ? '#FF4040' : 'rgba(255,144,48,.5)';
+      }
+      if(dhObj) dhObj.textContent = tracker.objects.size;
+    }
+  }
   
-  // Traffic strip only in drive mode
+  // Old cluster: hide in drive mode, show only when walking + moving
+  if(cluster) cluster.style.display = (!driveMode && mph > 2) ? 'flex' : 'none';
   if(trafficEl && !driveMode) trafficEl.style.display = 'none';
   
   sv.textContent=Math.round(mph);
@@ -1307,6 +1447,35 @@ function drawRadar(){
 
 function initAudio(){if(audioCtx)return;try{audioCtx=new(window.AudioContext||window.webkitAudioContext)()}catch(e){}}
 function playTone(f,g,d){if(!audioCtx)return;try{const o=audioCtx.createOscillator(),gn=audioCtx.createGain();o.type='sine';o.frequency.value=f;gn.gain.setValueAtTime(g,audioCtx.currentTime);gn.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+d);o.connect(gn);gn.connect(audioCtx.destination);o.start();o.stop(audioCtx.currentTime+d)}catch(e){}}
+
+// ── Collision proximity beep — faster beeps as vehicles get closer ──
+let lastProximityBeep = 0;
+function checkProximityBeep() {
+  if (!driveMode || !audioCtx) return;
+  const now = Date.now();
+  let closestVehicleFt = Infinity;
+  
+  for (const obj of tracker.objects.values()) {
+    if (!VEHICLE_CLASSES.has(obj.cls)) continue;
+    const realW = REAL_WIDTHS[obj.cls];
+    if (!realW || !detCanvas) continue;
+    const distM = estimateDistM(obj.bbox[2], realW, detCanvas.width, document.getElementById('cam')?.videoWidth);
+    if (distM) {
+      const ft = distM * 3.281;
+      if (ft < closestVehicleFt && obj.velocity.vy > 0.3) closestVehicleFt = ft; // approaching only
+    }
+  }
+  
+  if (closestVehicleFt < 100) {
+    // Beep interval: 50ft=100ms, 100ft=400ms
+    const interval = Math.max(80, closestVehicleFt * 4);
+    if (now - lastProximityBeep > interval) {
+      const freq = 800 + (100 - Math.min(closestVehicleFt, 100)) * 8; // higher pitch = closer
+      playTone(freq, 0.04, 0.06);
+      lastProximityBeep = now;
+    }
+  }
+}
 
 function initSensors(){
   const h=e=>{hasSensor=true;heading=e.webkitCompassHeading!==undefined?e.webkitCompassHeading:(360-(e.alpha||0)+360)%360;pitch=Math.max(-28,Math.min(28,(e.beta||0)-45))};
@@ -2491,7 +2660,7 @@ function startLoop(){
     if(!dragActive&&!hasSensor)pitch*=0.94;
     smoothP+=(pitch-smoothP)*0.12;
     updateAnchors();updateMovingTargets();
-    if(frame%3===0){updateCompass();drawRadar();updateSpeedUI()}
+    if(frame%3===0){updateCompass();drawRadar();updateSpeedUI();checkProximityBeep()}
     if(frame%600===0){ smartOsmUpdate(); } // check every ~10s
     if(frame%180===0){ checkProactiveAlerts(); } // check every ~3s
     if(frame%60===0){const n=new Date(),h=n.getHours(),m=n.getMinutes().toString().padStart(2,'0');document.getElementById('v-time').textContent=(h>12?h-12:h||12)+':'+m;/* pitch display removed */}
