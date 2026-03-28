@@ -1,5 +1,7 @@
+// api/health.js — v2
 const handler = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   if (req.method === 'OPTIONS') return res.status(200).end();
 
   const t0 = Date.now();
@@ -23,16 +25,10 @@ const handler = async (req, res) => {
     checks.incidents = { status: 'timeout', message: 'PulsePoint unreachable' };
   }
 
-  // Gemini API key configured
+  // Gemini API key
   checks.gemini = {
     status: process.env.GEMINI_API_KEY ? 'ok' : 'missing',
     configured: !!process.env.GEMINI_API_KEY,
-  };
-
-  // Vercel KV
-  checks.kv = {
-    status: 'ok',
-    configured: !!(process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL),
   };
 
   // Runtime
