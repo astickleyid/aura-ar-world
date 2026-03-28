@@ -297,6 +297,9 @@ function loadTF() {
   });
 }
 </script>
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.9.3/mapbox-gl.css" rel="stylesheet">
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.9.3/mapbox-gl.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@turf/turf@7/turf.min.js"></script>
 </head>
 <body>
 <!-- ═══ CAMERA LAYER ═══ -->
@@ -393,6 +396,36 @@ function loadTF() {
     <button id="vp-send" onclick="handleTextInput()" title="Send">▶</button>
   </div>
 </div>
+
+<!-- ═══ 3D NAV OVERLAY ═══ -->
+<div id="nav-overlay" style="display:none;position:fixed;bottom:0;left:0;right:0;height:65vh;z-index:20;
+  border-top:1px solid rgba(0,255,209,.2);overflow:hidden;
+  animation:navSlideUp .4s cubic-bezier(.34,1.1,.64,1)">
+  <div id="nav-map" style="width:100%;height:100%"></div>
+  <!-- Nav info bar -->
+  <div id="nav-info" style="position:absolute;top:0;left:0;right:0;
+    background:linear-gradient(to bottom,rgba(0,2,10,.85),transparent);
+    padding:12px 16px;display:flex;align-items:center;justify-content:space-between;z-index:2">
+    <div>
+      <div id="nav-dest" style="font-family:'Orbitron',monospace;font-size:11px;font-weight:700;color:#00FFD1;letter-spacing:.06em"></div>
+      <div id="nav-details" style="font-size:9px;color:rgba(255,255,255,.4);margin-top:3px;letter-spacing:.04em"></div>
+    </div>
+    <button onclick="closeNav()" style="background:rgba(255,64,64,.1);border:1px solid rgba(255,64,64,.25);
+      border-radius:8px;padding:8px 14px;font-family:'Orbitron',monospace;font-size:8px;
+      letter-spacing:.1em;color:#FF4040;cursor:pointer">CLOSE</button>
+  </div>
+  <!-- Replay button -->
+  <button id="nav-replay" onclick="replayFlythrough()" style="display:none;position:absolute;bottom:16px;left:50%;transform:translateX(-50%);
+    background:rgba(0,2,10,.7);border:1px solid rgba(0,255,209,.2);border-radius:8px;
+    padding:10px 20px;font-family:'Orbitron',monospace;font-size:9px;letter-spacing:.1em;
+    color:#00FFD1;cursor:pointer;z-index:2;backdrop-filter:blur(10px)">▶ REPLAY ROUTE</button>
+</div>
+<style>
+@keyframes navSlideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+#nav-overlay .mapboxgl-ctrl-bottom-left,
+#nav-overlay .mapboxgl-ctrl-bottom-right,
+#nav-overlay .mapboxgl-ctrl-top-right{display:none!important}
+</style>
 
 <!-- ═══ DRIVE MODE HUD BAR ═══ -->
 <div id="drive-hud" style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:6;pointer-events:none;
@@ -2018,8 +2051,314 @@ async function callAuraAI(userMessage) {
 }
 
 // ── Local fallback (no API) — improved version of original ──
+// ═══════════════════════════════════════════════════════════════
+// 3D NAVIGATION — Mapbox GL JS + Directions API + Flythrough
+// ═══════════════════════════════════════════════════════════════
+const MAPBOX_TOKEN = 'YOUR_MAPBOX_TOKEN_HERE'; // Replace with your Mapbox public token
+let navMap = null;
+let navRoute = null;
+let navAnimating = false;
+let navAnimFrame = null;
+
+// Find nearest place by type and show 3D route
+async function navigateTo(query) {
+  // Search places data for matching query
+  const q = query.toLowerCase();
+  let target = null;
+  
+  // Search existing places first
+  target = places.find(p => {
+    const name = p.name.toLowerCase();
+    const cat = p.cat.toLowerCase();
+    const type = (p.type || '').toLowerCase();
+    return name.includes(q) || cat.includes(q) || type.includes(q);
+  });
+  
+  // Common query mappings
+  const QUERY_MAP = {
+    'gas': 'fuel', 'gas station': 'fuel', 'fuel': 'fuel', 'petrol': 'fuel',
+    'food': 'restaurant', 'eat': 'restaurant', 'restaurant': 'restaurant', 'dinner': 'restaurant',
+    'coffee': 'cafe', 'cafe': 'cafe', 'starbucks': 'cafe',
+    'pharmacy': 'pharmacy', 'drug store': 'pharmacy', 'cvs': 'pharmacy',
+    'hospital': 'hospital', 'er': 'hospital', 'emergency': 'hospital',
+    'bank': 'bank', 'atm': 'atm', 'money': 'atm',
+    'park': 'park', 'parking': 'parking', 'hotel': 'hotel',
+    'bar': 'bar', 'drink': 'bar', 'pub': 'pub',
+    'store': 'supermarket', 'grocery': 'supermarket', 'market': 'supermarket',
+    'police': 'police', 'cops': 'police',
+  };
+  
+  if (!target) {
+    const mappedType = QUERY_MAP[q] || Object.entries(QUERY_MAP).find(([k]) => q.includes(k))?.[1];
+    if (mappedType) {
+      target = places.find(p => (p.type || '').toLowerCase().includes(mappedType) || p.cat.toLowerCase().includes(mappedType));
+    }
+  }
+  
+  // If still not found, do a live Overpass query for this specific type
+  if (!target) {
+    const osmType = QUERY_MAP[q] || q;
+    try {
+      const oq = `[out:json][timeout:8];node[amenity~"${osmType}"](around:3000,${uLat},${uLon});out body 1;`;
+      const resp = await fetch('https://overpass-api.de/api/interpreter', {
+        method: 'POST', headers: {'Content-Type':'application/x-www-form-urlencoded'},
+        body: 'data=' + encodeURIComponent(oq)
+      });
+      const data = await resp.json();
+      if (data.elements?.length) {
+        const e = data.elements[0];
+        target = {
+          name: e.tags?.name || osmType, lat: e.lat, lon: e.lon,
+          dist: hav(uLat, uLon, e.lat, e.lon),
+          cat: osmType.toUpperCase(), ico: '📍'
+        };
+      }
+    } catch(e) { /* silent */ }
+  }
+  
+  if (!target) {
+    auraSpeak("Can't find any " + query + " nearby. Try something else.", true);
+    return;
+  }
+  
+  const distText = fmtDistSpoken(target.dist || hav(uLat, uLon, target.lat, target.lon));
+  auraSpeak('Found ' + target.name + ', ' + distText + ' away. Showing you the route.', true);
+  
+  // Fetch driving directions from Mapbox
+  await showNavRoute(target);
+}
+
+async function showNavRoute(target) {
+  if (MAPBOX_TOKEN === 'YOUR_MAPBOX_TOKEN_HERE') {
+    auraSpeak('Navigation needs a Mapbox token. Add it in the code to see 3D routes.', true);
+    // Still show basic info
+    showToast(target.ico + ' ' + target.name + ' — ' + fmtDist(target.dist || hav(uLat,uLon,target.lat,target.lon)));
+    return;
+  }
+  
+  try {
+    // Get route from Mapbox Directions API
+    const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${uLon},${uLat};${target.lon},${target.lat}?geometries=geojson&overview=full&steps=true&access_token=${MAPBOX_TOKEN}`;
+    const resp = await fetch(url);
+    const data = await resp.json();
+    
+    if (!data.routes?.length) {
+      auraSpeak("Couldn't find a driving route. Might be off-road.", true);
+      return;
+    }
+    
+    const route = data.routes[0];
+    navRoute = route;
+    const coords = route.geometry.coordinates;
+    const durationMin = Math.round(route.duration / 60);
+    const distMi = (route.distance / 1609.344).toFixed(1);
+    const steps = route.legs[0]?.steps?.length || 0;
+    
+    // Show overlay
+    const overlay = document.getElementById('nav-overlay');
+    overlay.style.display = 'block';
+    
+    document.getElementById('nav-dest').textContent = target.name;
+    document.getElementById('nav-details').textContent = distMi + ' mi · ' + durationMin + ' min · ' + steps + ' turns';
+    
+    // Init or reuse map
+    if (!navMap) {
+      mapboxgl.accessToken = MAPBOX_TOKEN;
+      navMap = new mapboxgl.Map({
+        container: 'nav-map',
+        style: 'mapbox://styles/mapbox/standard',
+        center: [uLon, uLat],
+        zoom: 16,
+        pitch: 60,
+        bearing: smoothH,
+        antialias: true
+      });
+      
+      navMap.on('load', () => {
+        // Enable 3D terrain
+        navMap.addSource('mapbox-dem', {
+          type: 'raster-dem',
+          url: 'mapbox://mapbox.mapbox-terrain-dem-v1',
+          tileSize: 512,
+          maxzoom: 14
+        });
+        navMap.setTerrain({ source: 'mapbox-dem', exaggeration: 1.2 });
+        
+        addRouteAndFly(coords, target);
+      });
+    } else {
+      // Remove old route if exists
+      if (navMap.getSource('route')) {
+        navMap.removeLayer('route-line');
+        navMap.removeLayer('route-glow');
+        navMap.removeSource('route');
+      }
+      if (navMap.getSource('dest-point')) {
+        navMap.removeLayer('dest-pulse');
+        navMap.removeSource('dest-point');
+      }
+      
+      navMap.jumpTo({ center: [uLon, uLat], zoom: 16, pitch: 60, bearing: smoothH });
+      addRouteAndFly(coords, target);
+    }
+    
+  } catch(e) {
+    console.error('Nav route error:', e);
+    auraSpeak("Route failed. Check your connection.", true);
+  }
+}
+
+function addRouteAndFly(coords, target) {
+  // Add route line
+  navMap.addSource('route', {
+    type: 'geojson',
+    data: { type: 'Feature', geometry: { type: 'LineString', coordinates: coords } }
+  });
+  
+  // Glowing route line
+  navMap.addLayer({
+    id: 'route-glow',
+    type: 'line',
+    source: 'route',
+    paint: {
+      'line-color': '#00FFD1',
+      'line-width': 8,
+      'line-blur': 6,
+      'line-opacity': 0.4
+    }
+  });
+  
+  navMap.addLayer({
+    id: 'route-line',
+    type: 'line',
+    source: 'route',
+    paint: {
+      'line-color': '#00FFD1',
+      'line-width': 4,
+      'line-opacity': 0.9
+    }
+  });
+  
+  // Destination marker
+  navMap.addSource('dest-point', {
+    type: 'geojson',
+    data: { type: 'Feature', geometry: { type: 'Point', coordinates: [target.lon, target.lat] } }
+  });
+  
+  navMap.addLayer({
+    id: 'dest-pulse',
+    type: 'circle',
+    source: 'dest-point',
+    paint: {
+      'circle-radius': 12,
+      'circle-color': '#FF9030',
+      'circle-opacity': 0.7,
+      'circle-stroke-width': 2,
+      'circle-stroke-color': '#FFD700'
+    }
+  });
+  
+  // Start flythrough
+  startFlythrough(coords);
+}
+
+function startFlythrough(coords) {
+  const path = turf.lineString(coords);
+  const pathLength = turf.length(path, { units: 'kilometers' });
+  const duration = Math.max(4000, Math.min(12000, pathLength * 3000)); // 3s per km, min 4s, max 12s
+  const startTime = performance.now();
+  
+  let prevLng = coords[0][0], prevLat = coords[0][1];
+  navAnimating = true;
+  document.getElementById('nav-replay').style.display = 'none';
+  
+  function animate(time) {
+    if (!navAnimating) return;
+    
+    const elapsed = time - startTime;
+    const phase = Math.min(1, elapsed / duration);
+    
+    // Ease-in-out
+    const eased = phase < 0.5 ? 2 * phase * phase : 1 - Math.pow(-2 * phase + 2, 2) / 2;
+    
+    // Get point along route
+    const along = turf.along(path, pathLength * eased, { units: 'kilometers' });
+    const [lng, lat] = along.geometry.coordinates;
+    
+    // Calculate bearing from movement
+    const bearing = turf.bearing(turf.point([prevLng, prevLat]), turf.point([lng, lat]));
+    
+    // Smooth camera with lerp
+    const lerpAmt = 0.08;
+    const camLng = prevLng + (lng - prevLng) * lerpAmt;
+    const camLat = prevLat + (lat - prevLat) * lerpAmt;
+    
+    // Zoom based on progress — start zoomed in, pull out slightly in middle, zoom in at end
+    const zoom = 16.5 - Math.sin(phase * Math.PI) * 1.5;
+    
+    // Pitch — steep at start, flatten slightly in middle
+    const pitch = 65 - Math.sin(phase * Math.PI) * 10;
+    
+    navMap.jumpTo({
+      center: [lng, lat],
+      bearing: bearing,
+      pitch: pitch,
+      zoom: zoom
+    });
+    
+    prevLng = lng;
+    prevLat = lat;
+    
+    if (phase < 1) {
+      navAnimFrame = requestAnimationFrame(animate);
+    } else {
+      // Animation complete — show destination
+      navAnimating = false;
+      navMap.flyTo({
+        center: [coords[coords.length-1][0], coords[coords.length-1][1]],
+        zoom: 17,
+        pitch: 50,
+        bearing: bearing,
+        duration: 1500
+      });
+      document.getElementById('nav-replay').style.display = 'block';
+    }
+  }
+  
+  navAnimFrame = requestAnimationFrame(animate);
+}
+
+function replayFlythrough() {
+  if (navRoute) {
+    startFlythrough(navRoute.geometry.coordinates);
+  }
+}
+
+function closeNav() {
+  navAnimating = false;
+  if (navAnimFrame) cancelAnimationFrame(navAnimFrame);
+  document.getElementById('nav-overlay').style.display = 'none';
+}
+
 function localFallback(cmd) {
   const c = cmd.toLowerCase();
+  
+  // ── NAVIGATION — "where's the nearest X" / "take me to X" / "navigate to X" / "find a X" ──
+  const navMatch = c.match(/(?:where(?:'s| is) (?:the )?(?:nearest|closest)|navigate to|take me to|find (?:a |the )?(?:nearest |closest )?|directions to|route to|show me (?:a |the )?(?:nearest |closest )?)(.*)/);
+  if (navMatch) {
+    const query = navMatch[1].trim().replace(/[?.!]/g, '');
+    if (query) {
+      navigateTo(query);
+      return 'Looking for ' + query + ' nearby...';
+    }
+  }
+  // Also catch "nearest gas station" without the "where's"
+  const nearestMatch = c.match(/(?:nearest|closest) (.+)/);
+  if (nearestMatch && !c.includes('how far')) {
+    const query = nearestMatch[1].trim().replace(/[?.!]/g, '');
+    navigateTo(query);
+    return 'Searching for ' + query + '...';
+  }
   
   // ── What's nearby ──
   if (c.includes('near') || c.includes('around') || c.match(/what.*(here|around)/) || c.includes('what do you see') || c.includes('scan')) {
@@ -2154,7 +2493,7 @@ function localFallback(cmd) {
   
   // ── Help ──
   if (c.includes('help') || c.includes('what can')) {
-    return 'Ask me about cars nearby, speed, weather, incidents, or say tag to mark a spot. I can switch to night vision or thermal too.';
+    return 'Ask me where the nearest gas station is and I\'ll show you a 3D route. Or ask about cars, speed, weather, incidents, or say tag to mark a spot.';
   }
   
   // ── Drive mode ──
@@ -2164,7 +2503,7 @@ function localFallback(cmd) {
   }
   
   // ── Catch-all ──
-  return 'Try: what\'s nearby, any cars, how fast, weather, incidents, or tag this spot.';
+  return 'Try: where\'s the nearest gas station, any cars, how fast, weather, or tag this spot.';
 }
 
 // ── Execute commands detected in AI response ────────────────
