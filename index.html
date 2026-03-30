@@ -2042,12 +2042,6 @@ async function callAuraAI(userMessage) {
 // Mapbox token (split+reversed to avoid repo secret scanning)
 const _mb = ['wcndnRXYu12YiojIhJCLiQWa5VGbrNWa0NXYiojI1Jye.kp','A-m2EpcVwxLmjLpp_Sw-Zo.9JSMyVneqVDMuhHcwJTYy1GM'];
 const MAPBOX_TOKEN = _mb[0].split('').reverse().join('') + _mb[1].split('').reverse().join('');
-let _mapboxReady = true;
-let navMap = null;
-let navRoute = null;
-let navAnimating = false;
-let navAnimFrame = null;
-
 // ═══════════════════════════════════════════════════════════════
 // AR NAVIGATION — Route drawn directly on camera feed
 // Uses Mapbox Directions API for route, projects waypoints onto AR view
