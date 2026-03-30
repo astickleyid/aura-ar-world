@@ -397,35 +397,19 @@ function loadTF() {
   </div>
 </div>
 
-<!-- ═══ 3D NAV OVERLAY ═══ -->
-<div id="nav-overlay" style="display:none;position:fixed;bottom:0;left:0;right:0;height:65vh;z-index:20;
-  border-top:1px solid rgba(0,255,209,.2);overflow:hidden;
-  animation:navSlideUp .4s cubic-bezier(.34,1.1,.64,1)">
-  <div id="nav-map" style="width:100%;height:100%"></div>
-  <!-- Nav info bar -->
-  <div id="nav-info" style="position:absolute;top:0;left:0;right:0;
-    background:linear-gradient(to bottom,rgba(0,2,10,.85),transparent);
-    padding:12px 16px;display:flex;align-items:center;justify-content:space-between;z-index:2">
-    <div>
-      <div id="nav-dest" style="font-family:'Orbitron',monospace;font-size:11px;font-weight:700;color:#00FFD1;letter-spacing:.06em"></div>
-      <div id="nav-details" style="font-size:9px;color:rgba(255,255,255,.4);margin-top:3px;letter-spacing:.04em"></div>
-    </div>
-    <button onclick="closeNav()" style="background:rgba(255,64,64,.1);border:1px solid rgba(255,64,64,.25);
-      border-radius:8px;padding:8px 14px;font-family:'Orbitron',monospace;font-size:8px;
-      letter-spacing:.1em;color:#FF4040;cursor:pointer">CLOSE</button>
+<!-- ═══ AR NAV INFO BAR ═══ -->
+<div id="nav-bar" style="display:none;position:fixed;top:42px;left:50%;transform:translateX(-50%);z-index:6;
+  background:rgba(0,2,10,.45);border:1px solid rgba(0,255,209,.15);border-radius:10px;
+  padding:8px 16px;backdrop-filter:blur(10px);pointer-events:all;
+  display:none;align-items:center;gap:12px;max-width:90vw">
+  <div>
+    <div id="nb-dest" style="font-family:'Orbitron',monospace;font-size:10px;font-weight:700;color:#00FFD1;letter-spacing:.05em"></div>
+    <div id="nb-info" style="font-size:8px;color:rgba(255,255,255,.35);margin-top:2px;letter-spacing:.04em"></div>
   </div>
-  <!-- Replay button -->
-  <button id="nav-replay" onclick="replayFlythrough()" style="display:none;position:absolute;bottom:16px;left:50%;transform:translateX(-50%);
-    background:rgba(0,2,10,.7);border:1px solid rgba(0,255,209,.2);border-radius:8px;
-    padding:10px 20px;font-family:'Orbitron',monospace;font-size:9px;letter-spacing:.1em;
-    color:#00FFD1;cursor:pointer;z-index:2;backdrop-filter:blur(10px)">▶ REPLAY ROUTE</button>
+  <button onclick="cancelNav()" style="background:rgba(255,64,64,.08);border:1px solid rgba(255,64,64,.2);
+    border-radius:6px;padding:5px 10px;font-family:'DM Mono',monospace;font-size:8px;
+    color:rgba(255,64,64,.7);cursor:pointer;letter-spacing:.06em;flex-shrink:0">✕ END</button>
 </div>
-<style>
-@keyframes navSlideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
-#nav-overlay .mapboxgl-ctrl-bottom-left,
-#nav-overlay .mapboxgl-ctrl-bottom-right,
-#nav-overlay .mapboxgl-ctrl-top-right{display:none!important}
-</style>
 
 <!-- ═══ DRIVE MODE HUD BAR ═══ -->
 <div id="drive-hud" style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:6;pointer-events:none;
@@ -916,6 +900,7 @@ function startDetectionLoop() {
       });
       const tracked = tracker.update(filtered);
       drawTracked(tracked, camEl.videoWidth, camEl.videoHeight);
+      drawARRoute(); // AR navigation overlay
     } catch(e) { /* busy */ }
   }
   requestAnimationFrame(detectFrame);
@@ -2063,284 +2048,303 @@ let navRoute = null;
 let navAnimating = false;
 let navAnimFrame = null;
 
-// Find nearest place by type and show 3D route
+// ═══════════════════════════════════════════════════════════════
+// AR NAVIGATION — Route drawn directly on camera feed
+// Uses Mapbox Directions API for route, projects waypoints onto AR view
+// ═══════════════════════════════════════════════════════════════
+let navRoute = null;
+let navTarget = null;
+let navActive = false;
+let navWaypoints = []; // [{lat,lon},...] route waypoints
+let navSteps = []; // turn-by-turn instructions
+let navTotalDist = 0;
+let navTotalTime = 0;
+
+// Find nearest place by type and show AR route
 async function navigateTo(query) {
-  // Search places data for matching query
-  const q = query.toLowerCase();
+  const q = query.toLowerCase().trim();
   let target = null;
   
-  // Search existing places first
-  target = places.find(p => {
-    const name = p.name.toLowerCase();
-    const cat = p.cat.toLowerCase();
-    const type = (p.type || '').toLowerCase();
-    return name.includes(q) || cat.includes(q) || type.includes(q);
-  });
-  
-  // Common query mappings
+  // Expanded query mappings
   const QUERY_MAP = {
-    'gas': 'fuel', 'gas station': 'fuel', 'fuel': 'fuel', 'petrol': 'fuel',
-    'food': 'restaurant', 'eat': 'restaurant', 'restaurant': 'restaurant', 'dinner': 'restaurant',
-    'coffee': 'cafe', 'cafe': 'cafe', 'starbucks': 'cafe',
-    'pharmacy': 'pharmacy', 'drug store': 'pharmacy', 'cvs': 'pharmacy',
-    'hospital': 'hospital', 'er': 'hospital', 'emergency': 'hospital',
-    'bank': 'bank', 'atm': 'atm', 'money': 'atm',
-    'park': 'park', 'parking': 'parking', 'hotel': 'hotel',
-    'bar': 'bar', 'drink': 'bar', 'pub': 'pub',
-    'store': 'supermarket', 'grocery': 'supermarket', 'market': 'supermarket',
-    'police': 'police', 'cops': 'police',
+    'gas': ['fuel'], 'gas station': ['fuel'], 'fuel': ['fuel'],
+    'food': ['fast_food','restaurant','cafe'], 'eat': ['fast_food','restaurant'],
+    'fast food': ['fast_food'], 'burger': ['fast_food'], 'mcdonalds': ['fast_food'],
+    'wendys': ['fast_food'], 'taco bell': ['fast_food'], 'taco': ['fast_food','restaurant'],
+    'chick fil a': ['fast_food'], 'pizza': ['fast_food','restaurant'],
+    'chicken': ['fast_food','restaurant'],
+    'restaurant': ['restaurant'], 'dinner': ['restaurant'],
+    'lunch': ['fast_food','restaurant'], 'breakfast': ['cafe','fast_food'],
+    'coffee': ['cafe'], 'cafe': ['cafe'], 'starbucks': ['cafe'], 'dunkin': ['cafe'],
+    'pharmacy': ['pharmacy'], 'drug store': ['pharmacy'], 'cvs': ['pharmacy'],
+    'hospital': ['hospital','clinic'], 'er': ['hospital'],
+    'bank': ['bank'], 'atm': ['atm'],
+    'park': ['park'], 'parking': ['parking'], 'hotel': ['hotel'],
+    'bar': ['bar','pub'], 'drink': ['bar','pub'],
+    'store': ['supermarket','convenience'], 'grocery': ['supermarket'],
+    'police': ['police'],
   };
   
-  if (!target) {
-    const mappedType = QUERY_MAP[q] || Object.entries(QUERY_MAP).find(([k]) => q.includes(k))?.[1];
-    if (mappedType) {
-      target = places.find(p => (p.type || '').toLowerCase().includes(mappedType) || p.cat.toLowerCase().includes(mappedType));
-    }
+  let searchTypes = null;
+  for (const [key, types] of Object.entries(QUERY_MAP)) {
+    if (q.includes(key)) { searchTypes = types; break; }
   }
   
-  // If still not found, do a live Overpass query for this specific type
+  // Search loaded places
+  const candidates = places.filter(p => {
+    const name = (p.name || '').toLowerCase();
+    const cat = (p.cat || '').toLowerCase();
+    const type = (p.type || '').toLowerCase();
+    if (name.includes(q)) return true;
+    if (cat.includes(q)) return true;
+    if (searchTypes && searchTypes.some(t => type.includes(t) || cat.includes(t.replace(/_/g,' ')))) return true;
+    if (q.includes('food') && (type.includes('restaurant') || type.includes('fast_food') || type.includes('cafe'))) return true;
+    return false;
+  }).sort((a,b) => a.dist - b.dist);
+  
+  if (candidates.length) target = candidates[0];
+  
+  // Live Overpass search if not found locally
   if (!target) {
-    const osmType = QUERY_MAP[q] || q;
+    const osmTypes = searchTypes || [q.replace(/ /g,'_')];
+    const regex = osmTypes.join('|');
     try {
-      const oq = `[out:json][timeout:8];node[amenity~"${osmType}"](around:3000,${uLat},${uLon});out body 1;`;
+      showToast('Searching for ' + query + '...');
+      const oq = `[out:json][timeout:10];(node[amenity~"${regex}"](around:8000,${uLat},${uLon}););out body 5;`;
       const resp = await fetch('https://overpass-api.de/api/interpreter', {
-        method: 'POST', headers: {'Content-Type':'application/x-www-form-urlencoded'},
-        body: 'data=' + encodeURIComponent(oq)
+        method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body:'data='+encodeURIComponent(oq)
       });
       const data = await resp.json();
       if (data.elements?.length) {
-        const e = data.elements[0];
-        target = {
-          name: e.tags?.name || osmType, lat: e.lat, lon: e.lon,
-          dist: hav(uLat, uLon, e.lat, e.lon),
-          cat: osmType.toUpperCase(), ico: '📍'
-        };
+        const sorted = data.elements
+          .map(e => ({
+            name: e.tags?.name || query, lat: e.lat, lon: e.lon,
+            dist: hav(uLat,uLon,e.lat,e.lon),
+            cat: (e.tags?.amenity||query).toUpperCase().replace(/_/g,' '),
+            ico:'📍', type: e.tags?.amenity||'', tags: e.tags||{}
+          }))
+          .filter(e => e.name && e.name !== query)
+          .sort((a,b) => a.dist - b.dist);
+        if (sorted.length) target = sorted[0];
       }
-    } catch(e) { /* silent */ }
+    } catch(e) {}
   }
   
   if (!target) {
-    auraSpeak("Can't find any " + query + " nearby. Try something else.", true);
+    auraSpeak("Can\'t find any " + query + " nearby.", true);
     return;
   }
   
-  const distText = fmtDistSpoken(target.dist || hav(uLat, uLon, target.lat, target.lon));
-  auraSpeak('Found ' + target.name + ', ' + distText + ' away. Showing you the route.', true);
+  const dist = target.dist || hav(uLat,uLon,target.lat,target.lon);
+  auraSpeak('Found ' + target.name + ', ' + fmtDistSpoken(dist) + ' away. Route is on screen.', true);
   
-  // Fetch driving directions from Mapbox
-  await showNavRoute(target);
+  // Fetch driving directions and draw AR route
+  await activateARRoute(target);
 }
 
-async function showNavRoute(target) {
-  if (!MAPBOX_TOKEN || MAPBOX_TOKEN.length < 10) {
-    auraSpeak('Navigation needs a Mapbox token. Add it in the code to see 3D routes.', true);
-    // Still show basic info
-    showToast(target.ico + ' ' + target.name + ' — ' + fmtDist(target.dist || hav(uLat,uLon,target.lat,target.lon)));
-    return;
-  }
+async function activateARRoute(target) {
+  navTarget = target;
   
   try {
-    // Get route from Mapbox Directions API
     const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${uLon},${uLat};${target.lon},${target.lat}?geometries=geojson&overview=full&steps=true&access_token=${MAPBOX_TOKEN}`;
     const resp = await fetch(url);
     const data = await resp.json();
     
     if (!data.routes?.length) {
-      auraSpeak("Couldn't find a driving route. Might be off-road.", true);
+      auraSpeak('No driving route found.', true);
       return;
     }
     
     const route = data.routes[0];
     navRoute = route;
-    const coords = route.geometry.coordinates;
-    const durationMin = Math.round(route.duration / 60);
+    navWaypoints = route.geometry.coordinates.map(c => ({lon:c[0], lat:c[1]}));
+    navSteps = route.legs[0]?.steps || [];
+    navTotalDist = route.distance;
+    navTotalTime = route.duration;
+    navActive = true;
+    
     const distMi = (route.distance / 1609.344).toFixed(1);
-    const steps = route.legs[0]?.steps?.length || 0;
+    const durMin = Math.round(route.duration / 60);
     
-    // Show overlay
-    const overlay = document.getElementById('nav-overlay');
-    overlay.style.display = 'block';
-    
-    document.getElementById('nav-dest').textContent = target.name;
-    document.getElementById('nav-details').textContent = distMi + ' mi · ' + durationMin + ' min · ' + steps + ' turns';
-    
-    // Init or reuse map
-    if (!navMap) {
-      mapboxgl.accessToken = MAPBOX_TOKEN;
-      navMap = new mapboxgl.Map({
-        container: 'nav-map',
-        style: 'mapbox://styles/mapbox/standard',
-        center: [uLon, uLat],
-        zoom: 16,
-        pitch: 60,
-        bearing: smoothH,
-        antialias: true
-      });
-      
-      navMap.on('load', () => {
-        // Enable 3D terrain
-        navMap.addSource('mapbox-dem', {
-          type: 'raster-dem',
-          url: 'mapbox://mapbox.mapbox-terrain-dem-v1',
-          tileSize: 512,
-          maxzoom: 14
-        });
-        navMap.setTerrain({ source: 'mapbox-dem', exaggeration: 1.2 });
-        
-        addRouteAndFly(coords, target);
-      });
-    } else {
-      // Remove old route if exists
-      if (navMap.getSource('route')) {
-        navMap.removeLayer('route-line');
-        navMap.removeLayer('route-glow');
-        navMap.removeSource('route');
-      }
-      if (navMap.getSource('dest-point')) {
-        navMap.removeLayer('dest-pulse');
-        navMap.removeSource('dest-point');
-      }
-      
-      navMap.jumpTo({ center: [uLon, uLat], zoom: 16, pitch: 60, bearing: smoothH });
-      addRouteAndFly(coords, target);
+    // Show nav info bar
+    const bar = document.getElementById('nav-bar');
+    if (bar) {
+      bar.style.display = 'flex';
+      document.getElementById('nb-dest').textContent = target.name;
+      document.getElementById('nb-info').textContent = distMi + ' mi · ' + durMin + ' min';
     }
+    
+    showToast('Route active — ' + distMi + ' mi, ' + durMin + ' min');
     
   } catch(e) {
-    console.error('Nav route error:', e);
-    auraSpeak("Route failed. Check your connection.", true);
+    console.error('Route fetch failed:', e);
+    auraSpeak('Route failed.', true);
   }
 }
 
-function addRouteAndFly(coords, target) {
-  // Add route line
-  navMap.addSource('route', {
-    type: 'geojson',
-    data: { type: 'Feature', geometry: { type: 'LineString', coordinates: coords } }
-  });
-  
-  // Glowing route line
-  navMap.addLayer({
-    id: 'route-glow',
-    type: 'line',
-    source: 'route',
-    paint: {
-      'line-color': '#00FFD1',
-      'line-width': 8,
-      'line-blur': 6,
-      'line-opacity': 0.4
-    }
-  });
-  
-  navMap.addLayer({
-    id: 'route-line',
-    type: 'line',
-    source: 'route',
-    paint: {
-      'line-color': '#00FFD1',
-      'line-width': 4,
-      'line-opacity': 0.9
-    }
-  });
-  
-  // Destination marker
-  navMap.addSource('dest-point', {
-    type: 'geojson',
-    data: { type: 'Feature', geometry: { type: 'Point', coordinates: [target.lon, target.lat] } }
-  });
-  
-  navMap.addLayer({
-    id: 'dest-pulse',
-    type: 'circle',
-    source: 'dest-point',
-    paint: {
-      'circle-radius': 12,
-      'circle-color': '#FF9030',
-      'circle-opacity': 0.7,
-      'circle-stroke-width': 2,
-      'circle-stroke-color': '#FFD700'
-    }
-  });
-  
-  // Start flythrough
-  startFlythrough(coords);
+function cancelNav() {
+  navActive = false;
+  navRoute = null;
+  navWaypoints = [];
+  navTarget = null;
+  const bar = document.getElementById('nav-bar');
+  if (bar) bar.style.display = 'none';
+  showToast('Navigation cancelled');
 }
 
-function startFlythrough(coords) {
-  const path = turf.lineString(coords);
-  const pathLength = turf.length(path, { units: 'kilometers' });
-  const duration = Math.max(4000, Math.min(12000, pathLength * 3000)); // 3s per km, min 4s, max 12s
-  const startTime = performance.now();
+// Draw the AR route waypoints on the detection canvas every frame
+function drawARRoute() {
+  if (!navActive || !navWaypoints.length || !detCtx || !detCanvas) return;
   
-  let prevLng = coords[0][0], prevLat = coords[0][1];
-  navAnimating = true;
-  document.getElementById('nav-replay').style.display = 'none';
+  const cw = detCanvas.width, ch = detCanvas.height;
+  const hw = FOV_H / 2, hv = FOV_V / 2;
   
-  function animate(time) {
-    if (!navAnimating) return;
+  // Project each waypoint to screen coordinates
+  const projected = [];
+  for (let i = 0; i < navWaypoints.length; i++) {
+    const wp = navWaypoints[i];
+    const dist = hav(uLat, uLon, wp.lat, wp.lon);
+    const bearing = brg(uLat, uLon, wp.lat, wp.lon);
+    const dh = bdiff(bearing, smoothH);
     
-    const elapsed = time - startTime;
-    const phase = Math.min(1, elapsed / duration);
+    // Only draw waypoints within ~120° FOV
+    if (Math.abs(dh) > 60) continue;
     
-    // Ease-in-out
-    const eased = phase < 0.5 ? 2 * phase * phase : 1 - Math.pow(-2 * phase + 2, 2) / 2;
+    const screenX = cw/2 + (dh / hw) * (cw/2);
+    // Y position: closer = lower on screen, further = higher (perspective)
+    const distNorm = Math.min(dist / 1600, 1); // normalize to ~1 mile
+    const screenY = ch * 0.45 + (1 - distNorm) * (ch * 0.45); // bottom half of screen
     
-    // Get point along route
-    const along = turf.along(path, pathLength * eased, { units: 'kilometers' });
-    const [lng, lat] = along.geometry.coordinates;
+    const alpha = dist < 30 ? 0.3 : dist < 1600 ? 0.9 : 0.4;
+    const size = dist < 50 ? 6 : dist < 200 ? 4 : dist < 600 ? 3 : 2;
     
-    // Calculate bearing from movement
-    const bearing = turf.bearing(turf.point([prevLng, prevLat]), turf.point([lng, lat]));
+    projected.push({ x: screenX, y: screenY, dist, alpha, size, bearing, idx: i });
+  }
+  
+  if (projected.length < 2) return;
+  
+  // Draw the route path — glowing line connecting waypoints
+  detCtx.save();
+  
+  // Glow layer
+  detCtx.beginPath();
+  detCtx.strokeStyle = 'rgba(0,255,209,0.15)';
+  detCtx.lineWidth = 12;
+  detCtx.lineJoin = 'round';
+  detCtx.lineCap = 'round';
+  projected.forEach((p, i) => {
+    i === 0 ? detCtx.moveTo(p.x, p.y) : detCtx.lineTo(p.x, p.y);
+  });
+  detCtx.stroke();
+  
+  // Main route line
+  detCtx.beginPath();
+  detCtx.lineWidth = 3;
+  detCtx.lineJoin = 'round';
+  detCtx.lineCap = 'round';
+  // Animated dash
+  const dashOffset = (Date.now() / 50) % 20;
+  detCtx.setLineDash([8, 12]);
+  detCtx.lineDashOffset = -dashOffset;
+  detCtx.strokeStyle = '#00FFD1';
+  detCtx.shadowColor = '#00FFD1';
+  detCtx.shadowBlur = 8;
+  projected.forEach((p, i) => {
+    detCtx.globalAlpha = p.alpha;
+    i === 0 ? detCtx.moveTo(p.x, p.y) : detCtx.lineTo(p.x, p.y);
+  });
+  detCtx.stroke();
+  detCtx.setLineDash([]);
+  detCtx.shadowBlur = 0;
+  
+  // Draw waypoint dots
+  projected.forEach(p => {
+    detCtx.globalAlpha = p.alpha;
+    detCtx.beginPath();
+    detCtx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    detCtx.fillStyle = '#00FFD1';
+    detCtx.shadowColor = '#00FFD1';
+    detCtx.shadowBlur = 6;
+    detCtx.fill();
+    detCtx.shadowBlur = 0;
+  });
+  
+  // Draw destination marker (last waypoint if visible)
+  const last = projected[projected.length - 1];
+  if (last) {
+    detCtx.globalAlpha = 0.9;
+    // Pulsing ring
+    const pulse = 1 + Math.sin(Date.now() / 300) * 0.3;
+    detCtx.beginPath();
+    detCtx.arc(last.x, last.y, 10 * pulse, 0, Math.PI * 2);
+    detCtx.strokeStyle = '#FF9030';
+    detCtx.lineWidth = 2;
+    detCtx.shadowColor = '#FF9030';
+    detCtx.shadowBlur = 12;
+    detCtx.stroke();
+    detCtx.shadowBlur = 0;
     
-    // Smooth camera with lerp
-    const lerpAmt = 0.08;
-    const camLng = prevLng + (lng - prevLng) * lerpAmt;
-    const camLat = prevLat + (lat - prevLat) * lerpAmt;
-    
-    // Zoom based on progress — start zoomed in, pull out slightly in middle, zoom in at end
-    const zoom = 16.5 - Math.sin(phase * Math.PI) * 1.5;
-    
-    // Pitch — steep at start, flatten slightly in middle
-    const pitch = 65 - Math.sin(phase * Math.PI) * 10;
-    
-    navMap.jumpTo({
-      center: [lng, lat],
-      bearing: bearing,
-      pitch: pitch,
-      zoom: zoom
+    // Destination label
+    detCtx.font = '700 10px "Orbitron", monospace';
+    detCtx.fillStyle = '#FF9030';
+    detCtx.textAlign = 'center';
+    detCtx.shadowColor = '#FF9030';
+    detCtx.shadowBlur = 6;
+    const destDist = fmtDist(hav(uLat,uLon,navTarget.lat,navTarget.lon));
+    detCtx.fillText(navTarget.name, last.x, last.y - 18);
+    detCtx.font = '700 8px "Orbitron", monospace';
+    detCtx.fillText(destDist, last.x, last.y - 8);
+    detCtx.shadowBlur = 0;
+    detCtx.textAlign = 'left';
+  }
+  
+  // Draw next turn instruction
+  if (navSteps.length > 1) {
+    const nextStep = navSteps.find(s => {
+      const sloc = s.maneuver?.location;
+      if (!sloc) return false;
+      return hav(uLat,uLon,sloc[1],sloc[0]) > 15; // next turn > 50ft away
     });
-    
-    prevLng = lng;
-    prevLat = lat;
-    
-    if (phase < 1) {
-      navAnimFrame = requestAnimationFrame(animate);
-    } else {
-      // Animation complete — show destination
-      navAnimating = false;
-      navMap.flyTo({
-        center: [coords[coords.length-1][0], coords[coords.length-1][1]],
-        zoom: 17,
-        pitch: 50,
-        bearing: bearing,
-        duration: 1500
-      });
-      document.getElementById('nav-replay').style.display = 'block';
+    if (nextStep) {
+      const maneuver = nextStep.maneuver;
+      const turnDist = hav(uLat,uLon,maneuver.location[1],maneuver.location[0]);
+      const turnDir = (maneuver.modifier || '').toUpperCase();
+      const turnType = (maneuver.type || '').toUpperCase();
+      const arrow = turnDir.includes('LEFT') ? '←' : turnDir.includes('RIGHT') ? '→' : '↑';
+      
+      detCtx.globalAlpha = 0.85;
+      // Turn instruction box at top center
+      const boxW = 200, boxH = 44;
+      const bx = cw/2 - boxW/2, by = 80;
+      detCtx.fillStyle = 'rgba(0,2,10,0.5)';
+      detCtx.beginPath();
+      detCtx.roundRect(bx, by, boxW, boxH, 8);
+      detCtx.fill();
+      detCtx.strokeStyle = 'rgba(0,255,209,0.2)';
+      detCtx.lineWidth = 1;
+      detCtx.stroke();
+      
+      // Arrow
+      detCtx.font = '700 20px "Orbitron", monospace';
+      detCtx.fillStyle = '#00FFD1';
+      detCtx.textAlign = 'center';
+      detCtx.fillText(arrow, bx + 28, by + 30);
+      
+      // Instruction text
+      detCtx.font = '600 9px "DM Mono", monospace';
+      detCtx.fillStyle = 'rgba(255,255,255,0.8)';
+      detCtx.textAlign = 'left';
+      const instrText = (nextStep.name || turnType + ' ' + turnDir).slice(0, 22);
+      detCtx.fillText(instrText, bx + 52, by + 20);
+      detCtx.font = '700 10px "Orbitron", monospace';
+      detCtx.fillStyle = '#00FFD1';
+      detCtx.fillText(fmtDist(turnDist), bx + 52, by + 34);
+      detCtx.textAlign = 'left';
     }
   }
   
-  navAnimFrame = requestAnimationFrame(animate);
-}
-
-function replayFlythrough() {
-  if (navRoute) {
-    startFlythrough(navRoute.geometry.coordinates);
-  }
-}
-
-function closeNav() {
-  navAnimating = false;
-  if (navAnimFrame) cancelAnimationFrame(navAnimFrame);
-  document.getElementById('nav-overlay').style.display = 'none';
+  detCtx.restore();
 }
 
 function localFallback(cmd) {
@@ -2503,6 +2507,12 @@ function localFallback(cmd) {
   if (c.includes('drive mode') || c.includes('driving')) {
     driveMode = !driveMode;
     return 'Drive mode ' + (driveMode ? 'on' : 'off') + '.';
+  }
+  
+  // ── Cancel navigation ──
+  if (c.includes('cancel') || c.includes('stop nav') || c.includes('end route') || c.includes('clear route')) {
+    if (navActive) { cancelNav(); return 'Navigation cancelled.'; }
+    return 'No active navigation.';
   }
   
   // ── Catch-all ──
