@@ -539,14 +539,14 @@ async function fetchPlaces(lat,lon){
 
   // Direct Overpass fallback
   const R=osmRadius();
-  const q='[out:json][timeout:14];(node[amenity~"restaurant|cafe|bar|bank|pharmacy|hospital|cinema|hotel|fast_food|fuel|supermarket|pub|police|fire_station|library|nightclub|atm"](around:'+R+','+lat+','+lon+');node["man_made"="surveillance"](around:'+R+','+lat+','+lon+');node["highway"="speed_camera"](around:'+R+','+lat+','+lon+');node["highway"="traffic_signals"](around:'+R+','+lat+','+lon+');node[tourism~"attraction|museum|viewpoint"](around:'+R+','+lat+','+lon+');node[leisure~"park|fitness_centre"](around:'+R+','+lat+','+lon+');)->.r;.r out body;';
+  const q='[out:json][timeout:14];(nwr[amenity~"restaurant|cafe|bar|bank|pharmacy|hospital|cinema|hotel|fast_food|fuel|supermarket|pub|police|fire_station|library|nightclub|atm"](around:'+R+','+lat+','+lon+');node["man_made"="surveillance"](around:'+R+','+lat+','+lon+');node["highway"="speed_camera"](around:'+R+','+lat+','+lon+');node["highway"="traffic_signals"](around:'+R+','+lat+','+lon+');node[tourism~"attraction|museum|viewpoint"](around:'+R+','+lat+','+lon+');node[leisure~"park|fitness_centre"](around:'+R+','+lat+','+lon+');)->.r;.r out body;';
   const resp=await fetch('https://overpass-api.de/api/interpreter',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(q)});
   const data=await resp.json();
   return processElements(data.elements||[], lat, lon);
 }
 
 function processElements(elements, lat, lon){
-  return(elements).slice(0,18).map(e=>{
+  return(elements).slice(0,18).map(e=>{if(!e.lat&&e.center){e.lat=e.center.lat;e.lon=e.center.lon;}
     const tags=e.tags||{};
     const type=tags.amenity||tags.shop||tags.tourism||tags.leisure||tags.historic||tags.man_made||tags.highway||'place';
     const name=tags.name||autoName(type,tags);
@@ -2103,7 +2103,7 @@ async function navigateTo(query) {
   const regex = osmTypes.join('|');
   try {
     showToast('Finding nearest ' + query + '...');
-    const oq = `[out:json][timeout:12];(node[amenity~"${regex}"](around:8000,${uLat},${uLon}););out body 30;`;
+    const oq = `[out:json][timeout:12];(node[amenity~"${regex}"](around:8000,${uLat},${uLon});way[amenity~"${regex}"](around:8000,${uLat},${uLon}););out center 30;`;
     const resp = await fetch('https://overpass-api.de/api/interpreter', {
       method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
       body:'data='+encodeURIComponent(oq)
@@ -2112,7 +2112,7 @@ async function navigateTo(query) {
     if (data.elements?.length) {
       const sorted = data.elements
         .map(e => ({
-          name: e.tags?.name || e.tags?.brand || query, lat: e.lat, lon: e.lon,
+          name: e.tags?.name || e.tags?.brand || query, lat: e.lat || e.center?.lat, lon: e.lon || e.center?.lon,
           dist: hav(uLat,uLon,e.lat,e.lon),
           cat: (e.tags?.amenity||query).toUpperCase().replace(/_/g,' '),
           ico:'\u{1f4cd}', type: e.tags?.amenity||'', tags: e.tags||{}
