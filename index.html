@@ -2084,7 +2084,7 @@ async function navigateTo(query) {
     if (q.includes(key)) { searchTypes = types; break; }
   }
   
-  // Search loaded places
+  // Search loaded places first (small radius)
   const candidates = places.filter(p => {
     const name = (p.name || '').toLowerCase();
     const cat = (p.cat || '').toLowerCase();
@@ -2096,34 +2096,39 @@ async function navigateTo(query) {
     return false;
   }).sort((a,b) => a.dist - b.dist);
   
-  if (candidates.length) target = candidates[0];
+  let localBest = candidates.length ? candidates[0] : null;
   
-  // Live Overpass search if not found locally
-  if (!target) {
-    const osmTypes = searchTypes || [q.replace(/ /g,'_')];
-    const regex = osmTypes.join('|');
-    try {
-      showToast('Searching for ' + query + '...');
-      const oq = `[out:json][timeout:10];(node[amenity~"${regex}"](around:8000,${uLat},${uLon}););out body 5;`;
-      const resp = await fetch('https://overpass-api.de/api/interpreter', {
-        method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
-        body:'data='+encodeURIComponent(oq)
-      });
-      const data = await resp.json();
-      if (data.elements?.length) {
-        const sorted = data.elements
-          .map(e => ({
-            name: e.tags?.name || query, lat: e.lat, lon: e.lon,
-            dist: hav(uLat,uLon,e.lat,e.lon),
-            cat: (e.tags?.amenity||query).toUpperCase().replace(/_/g,' '),
-            ico:'📍', type: e.tags?.amenity||'', tags: e.tags||{}
-          }))
-          .filter(e => e.name && e.name !== query)
-          .sort((a,b) => a.dist - b.dist);
-        if (sorted.length) target = sorted[0];
+  // ALWAYS do Overpass search to find true nearest (local radius is small)
+  const osmTypes = searchTypes || [q.replace(/ /g,'_')];
+  const regex = osmTypes.join('|');
+  try {
+    showToast('Finding nearest ' + query + '...');
+    const oq = `[out:json][timeout:12];(node[amenity~"${regex}"](around:8000,${uLat},${uLon}););out body 30;`;
+    const resp = await fetch('https://overpass-api.de/api/interpreter', {
+      method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body:'data='+encodeURIComponent(oq)
+    });
+    const data = await resp.json();
+    if (data.elements?.length) {
+      const sorted = data.elements
+        .map(e => ({
+          name: e.tags?.name || e.tags?.brand || query, lat: e.lat, lon: e.lon,
+          dist: hav(uLat,uLon,e.lat,e.lon),
+          cat: (e.tags?.amenity||query).toUpperCase().replace(/_/g,' '),
+          ico:'\u{1f4cd}', type: e.tags?.amenity||'', tags: e.tags||{}
+        }))
+        .sort((a,b) => a.dist - b.dist);
+      if (sorted.length) {
+        const best = sorted[0];
+        if (!localBest || best.dist < localBest.dist) {
+          target = best;
+        } else {
+          target = localBest;
+        }
       }
-    } catch(e) {}
-  }
+    }
+  } catch(e) { console.warn('Search failed:', e); }
+  if (!target && localBest) target = localBest;
   
   if (!target) {
     auraSpeak("Can\'t find any " + query + " nearby.", true);
