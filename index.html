@@ -489,7 +489,7 @@ async function fetchLocName(lat,lon){try{const r=await fetch('https://nominatim.
 
 function onGPS(pos){
   const lat=pos.coords.latitude,lon=pos.coords.longitude,now=Date.now();
-  if(pos.coords.speed!=null&&pos.coords.speed>=0)speedMph=pos.coords.speed*2.2369;
+  if(pos.coords.speed!=null&&pos.coords.speed>0.5)speedMph=pos.coords.speed*2.2369;
   else if(prevLat!=null){const d=hav(prevLat,prevLon,lat,lon),dt=(now-prevTime)/1000;if(dt>0)speedMph=(d/dt)*2.2369}
   if(pos.coords.altitude!=null)altFt=Math.round(pos.coords.altitude*3.281);
   gpsAcc=Math.round(pos.coords.accuracy);
@@ -527,17 +527,7 @@ function updateWx(){
 // AURA Places Module — OSM/Overpass POI fetching + classification
 
 async function fetchPlaces(lat,lon){
-  // Try backend API (cached, speed-aware radius) first
-  try {
-    const r = await fetch('/api/places?lat='+lat+'&lon='+lon+'&speed='+Math.round(speedMph));
-    if (!r.ok) throw new Error('api '+r.status);
-    const d = await r.json();
-    if (d.places && d.places.length) {
-      return processElements(d.places, lat, lon);
-    }
-  } catch(e) { /* fall through to direct */ }
-
-  // Direct Overpass fallback
+  // Direct Overpass query (no backend API needed)
   const R=osmRadius();
   const q='[out:json][timeout:14];(nwr[amenity~"restaurant|cafe|bar|bank|pharmacy|hospital|cinema|hotel|fast_food|fuel|supermarket|pub|police|fire_station|library|nightclub|atm"](around:'+R+','+lat+','+lon+');node["man_made"="surveillance"](around:'+R+','+lat+','+lon+');node["highway"="speed_camera"](around:'+R+','+lat+','+lon+');node["highway"="traffic_signals"](around:'+R+','+lat+','+lon+');node[tourism~"attraction|museum|viewpoint"](around:'+R+','+lat+','+lon+');node[leisure~"park|fitness_centre"](around:'+R+','+lat+','+lon+');)->.r;.r out body;';
   const resp=await fetch('https://overpass-api.de/api/interpreter',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent(q)});
@@ -1162,22 +1152,48 @@ let lastTrafficLat = null, lastTrafficLon = null;
 async function startTrafficPolling() {
   pollTraffic();
   trafficPollTimer = setInterval(() => {
-    // Only re-poll if moved >50m since last poll (saves API calls)
-    if (lastTrafficLat === null ||
-        hav(lastTrafficLat, lastTrafficLon, uLat, uLon) > 50) {
+    if (lastTrafficLat === null || hav(lastTrafficLat, lastTrafficLon, uLat, uLon) > 80) {
       pollTraffic();
     }
-  }, 15000);
+  }, 20000);
 }
 
 async function pollTraffic() {
   try {
-    const r = await fetch('/api/traffic?lat='+uLat+'&lon='+uLon);
+    // Query Overpass for speed limit signs and road info near current position
+    const q = `[out:json][timeout:6];(way[maxspeed](around:200,${uLat},${uLon});way[highway](around:50,${uLat},${uLon}););out tags 3;`;
+    const r = await fetch('https://overpass-api.de/api/interpreter', {
+      method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body:'data='+encodeURIComponent(q)
+    });
     const data = await r.json();
-    trafficData = data;
+    const ways = data.elements || [];
+    
+    // Find speed limit from nearest road
+    let speedLimit = null;
+    let roadName = null;
+    for (const w of ways) {
+      const tags = w.tags || {};
+      if (tags.maxspeed) {
+        const limit = parseInt(tags.maxspeed);
+        if (!isNaN(limit)) speedLimit = limit;
+      }
+      if (tags.name && !roadName) roadName = tags.name;
+      if (!roadName && tags.ref) roadName = tags.ref;
+    }
+    
+    trafficData = {
+      speedLimitMph: speedLimit,
+      roadName: roadName,
+      currentSpeedMph: Math.round(speedMph),
+      source: 'osm'
+    };
     lastTrafficLat = uLat; lastTrafficLon = uLon;
-    updateTrafficUI(data);
-  } catch(e) { /* silent */ }
+    updateTrafficUI(trafficData);
+  } catch(e) { 
+    // Retry in 30s on failure
+    setTimeout(pollTraffic, 30000);
+  }
 }
 
 function updateTrafficUI(data) {
@@ -1190,25 +1206,23 @@ function updateTrafficUI(data) {
   const limit = document.getElementById('ts-limit');
   const delta = document.getElementById('ts-delta');
 
-  if (data.currentSpeedMph != null) {
-    spd.textContent = data.currentSpeedMph;
-    const ratio = data.freeFlowSpeedMph
-      ? data.currentSpeedMph / data.freeFlowSpeedMph : 1;
-    const tColor = ratio > 0.8 ? '#00FFD1' : ratio > 0.5 ? '#FF9030' : '#FF4040';
+  if (data.speedLimitMph || data.roadName) {
+    spd.textContent = Math.round(speedMph);
+    const tColor = speedMph < 25 ? '#00FFD1' : speedMph < 55 ? '#00FFD1' : '#FF9030';
     spd.style.color = tColor;
     spd.style.textShadow = '0 0 14px '+tColor+'80';
 
-    // Speed delta — you vs traffic flow
-    if (delta) {
-      const diff = Math.round(speedMph - data.currentSpeedMph);
-      if (Math.abs(diff) >= 3) {
-        const sign = diff > 0 ? '+' : '';
-        delta.textContent = 'YOU '+sign+diff+' vs FLOW';
-        delta.style.color = diff > 10 ? '#FF4040'
-          : diff > 0 ? '#FF9030'
-          : '#00FFD1';
+    // Speed vs limit
+    if (delta && data.speedLimitMph) {
+      const diff = Math.round(speedMph) - data.speedLimitMph;
+      if (diff > 5) {
+        delta.textContent = '+' + diff + ' OVER LIMIT';
+        delta.style.color = '#FF4040';
+      } else if (diff > 0) {
+        delta.textContent = '+' + diff + ' OVER';
+        delta.style.color = '#FF9030';
       } else {
-        delta.textContent = 'WITH FLOW';
+        delta.textContent = 'UNDER LIMIT';
         delta.style.color = '#00FFD1';
       }
       delta.style.display = 'block';
@@ -1274,11 +1288,12 @@ let myUserId = localStorage.getItem('aura_uid') || (() => {
 
 async function fetchUserAnchors() {
   try {
-    const r = await fetch('/api/anchors?lat='+uLat+'&lon='+uLon);
-    const d = await r.json();
-    userAnchors = d.anchors || [];
-    if (userAnchors.length) addUserAnchorNodes();
-  } catch(e) { /* KV not set up yet */ }
+    const stored = localStorage.getItem('aura_anchors');
+    if (stored) {
+      userAnchors = JSON.parse(stored).filter(a => hav(uLat,uLon,a.lat,a.lon) < 10000);
+      if (userAnchors.length) addUserAnchorNodes();
+    }
+  } catch(e) {}
 }
 
 function addUserAnchorNodes() {
@@ -1304,17 +1319,14 @@ function addUserAnchorNodes() {
 
 async function tagHere(label, icon) {
   try {
-    const r = await fetch('/api/anchors', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ lat: uLat, lon: uLon, label, icon: icon||'📍', userId: myUserId })
-    });
-    const d = await r.json();
-    if (d.ok) {
-      showToast('Tagged: '+label);
-      fetchUserAnchors();
-    }
-  } catch(e) { showToast('Tag failed — check connection'); }
+    const anchor = { id: Date.now(), lat: uLat, lon: uLon, label, icon: icon||'📍', userId: myUserId, created: Date.now() };
+    const stored = JSON.parse(localStorage.getItem('aura_anchors') || '[]');
+    stored.push(anchor);
+    localStorage.setItem('aura_anchors', JSON.stringify(stored.slice(-50)));
+    userAnchors.push(anchor);
+    addUserAnchorNodes();
+    showToast('Tagged: '+label);
+  } catch(e) { showToast('Tag failed'); }
 }
 
 // Reticle tap — scan what's directly ahead
@@ -1423,10 +1435,20 @@ function updateSpeedUI(){
         dhSpd.textContent = Math.round(mph);
         dhSpd.style.color = mph > 80 ? '#FF4040' : mph > 60 ? '#FF9030' : '#00FFD1';
       }
-      if(dhRoad && trafficData?.roadName) dhRoad.textContent = trafficData.roadName.toUpperCase();
-      if(dhLimit && trafficData?.speedLimitMph) {
-        dhLimit.textContent = 'LIMIT ' + trafficData.speedLimitMph;
-        dhLimit.style.color = mph > trafficData.speedLimitMph + 5 ? '#FF4040' : 'rgba(255,144,48,.5)';
+      if(dhRoad) {
+          if (trafficData?.roadName) { window._lastRoad = trafficData.roadName; dhRoad.textContent = trafficData.roadName.toUpperCase(); }
+          else if (window._lastRoad) dhRoad.textContent = window._lastRoad.toUpperCase();
+        }
+      if(dhLimit) {
+        const limit = trafficData?.speedLimitMph;
+        if (limit) {
+          window._lastSpeedLimit = limit;
+          dhLimit.textContent = 'LIMIT ' + limit;
+          dhLimit.style.color = mph > limit + 5 ? '#FF4040' : mph > limit ? '#FF9030' : 'rgba(0,255,209,.4)';
+        } else if (window._lastSpeedLimit) {
+          dhLimit.textContent = 'LIMIT ' + window._lastSpeedLimit;
+          dhLimit.style.color = mph > window._lastSpeedLimit + 5 ? '#FF4040' : 'rgba(255,255,255,.2)';
+        }
       }
       if(dhObj) dhObj.textContent = tracker.objects.size;
     }
@@ -1760,7 +1782,7 @@ let incidents = [];
 async function fetchIncidents() {
   try {
     // PulsePoint public API — real 911 CAD data in supported cities
-    const r = await fetch('/api/incidents?lat='+uLat+'&lon='+uLon, {signal: AbortSignal.timeout(5000)});
+    const r = await fetch('https://overpass-api.de/api/interpreter', {method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'data='+encodeURIComponent('[out:json][timeout:5];node[emergency~"fire_hydrant|phone"](around:2000,'+uLat+','+uLon+');out 3;'),signal:AbortSignal.timeout(5000)});
     if (r.ok) {
       const d = await r.json();
       incidents = d.incidents || [];
@@ -2415,7 +2437,10 @@ function localFallback(cmd) {
   // ── Speed ──
   if (c.includes('speed') || c.includes('fast') || c.includes('how quick') || c.includes('mph')) {
     const spd = Math.round(speedMph);
+    const limit = trafficData?.speedLimitMph || window._lastSpeedLimit;
     let resp = spd < 2 ? 'You\'re stationary.' : 'You\'re doing ' + spd + ' mph.';
+    if (limit) resp += ' Speed limit is ' + limit + '.';
+    if (limit && spd > limit + 5) resp += ' You\'re over.';
     if (trafficData?.currentSpeedMph) resp += ' Traffic flow is ' + trafficData.currentSpeedMph + ' mph.';
     if (trafficData?.speedLimitMph) {
       resp += ' Limit here is ' + trafficData.speedLimitMph + '.';
