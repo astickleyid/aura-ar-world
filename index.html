@@ -433,6 +433,21 @@ function loadTF() {
 <div id="voice-caption"></div>
 <div id="voice-ring" onclick="toggleVoice()" oncontextmenu="event.preventDefault();openVoicePanel()" title="Tap to speak · Long-press for chat panel">🎙</div>
 
+<button id="cat-filter-btn" onclick="toggleCatFilterPanel()" title="Filter anchor categories">⊞</button>
+
+<div id="cat-filter-panel">
+  <div id="cat-filter-inner">
+    <div class="cfi-header">
+      <span class="cfi-title">⊞ Anchor Categories</span>
+      <button class="cfi-close" onclick="toggleCatFilterPanel()">✕</button>
+    </div>
+    <div class="cfi-grid" id="cfi-grid"></div>
+    <div class="cfi-footer">
+      <button class="cfi-show-all" onclick="showAllCategories()">Show All</button>
+    </div>
+  </div>
+</div>
+
 <!-- ═══ ZOOM BADGE ═══ -->
 <div id="zoom-badge">
   <div class="zoom-val" id="zoom-val">1.0x</div>

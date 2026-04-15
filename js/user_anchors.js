@@ -13,7 +13,7 @@ async function fetchUserAnchors() {
     const r = await fetch('/api/anchors?lat='+uLat+'&lon='+uLon);
     const d = await r.json();
     userAnchors = d.anchors || [];
-    if (userAnchors.length) addUserAnchorNodes();
+    if (userAnchors.length) { addUserAnchorNodes(); applyAnchorCategoryFilter(); }
   } catch(e) { /* KV not set up yet */ }
 }
 
@@ -69,4 +69,55 @@ function openTagDialog() {
       <button onclick="const v=document.getElementById('custom-tag').value.trim();if(v){tagHere(v,'📍');closePopup()}" style="background:rgba(0,255,209,.07);border:1px solid rgba(0,255,209,.27);border-radius:8px;padding:9px 14px;font-family:'Orbitron',monospace;font-size:9px;color:#00FFD1;cursor:pointer">TAG</button>
     </div>`;
   document.getElementById('popup').classList.add('on');
+}
+
+// ── CATEGORY FILTER ──────────────────────────────────────────────────────
+const CAT_EMOJIS = { FOOD:'🍔', CCTV:'📷', POLICE:'🚔', MEDICAL:'⚕️', FINANCE:'💳', PARKS:'🌳', VENUES:'🏛️', OTHER:'📍' };
+const ALL_CATS   = ['FOOD','CCTV','POLICE','MEDICAL','FINANCE','PARKS','VENUES','OTHER'];
+let hiddenCategories = new Set(JSON.parse(localStorage.getItem('aura_hidden_cats')||'[]'));
+
+function toggleCatFilterPanel() {
+  const panel = document.getElementById('cat-filter-panel');
+  const btn   = document.getElementById('cat-filter-btn');
+  const open  = panel.classList.toggle('open');
+  btn.classList.toggle('active', open);
+  if (open) renderCatFilterGrid();
+}
+
+function renderCatFilterGrid() {
+  const grid = document.getElementById('cfi-grid');
+  if (!grid) return;
+  grid.innerHTML = ALL_CATS.map(cat => {
+    const hidden = hiddenCategories.has(cat);
+    return `<button class="cfi-pill${hidden?' hidden-cat':''}" onclick="toggleCatVisibility('${cat}')">
+      <span class="cfi-pill-ico">${CAT_EMOJIS[cat]||'📍'}</span><span>${cat}</span>
+    </button>`;
+  }).join('');
+}
+
+function toggleCatVisibility(cat) {
+  hiddenCategories.has(cat) ? hiddenCategories.delete(cat) : hiddenCategories.add(cat);
+  localStorage.setItem('aura_hidden_cats', JSON.stringify([...hiddenCategories]));
+  renderCatFilterGrid();
+  applyAnchorCategoryFilter();
+  const btn = document.getElementById('cat-filter-btn');
+  if (btn) btn.classList.toggle('filtered', hiddenCategories.size > 0);
+}
+
+function showAllCategories() {
+  hiddenCategories.clear();
+  localStorage.setItem('aura_hidden_cats','[]');
+  renderCatFilterGrid();
+  applyAnchorCategoryFilter();
+  const btn = document.getElementById('cat-filter-btn');
+  if (btn) btn.classList.remove('filtered');
+}
+
+function applyAnchorCategoryFilter() {
+  userAnchors.forEach(a => {
+    const el  = document.getElementById('an-ua-'+a.id);
+    if (!el) return;
+    const cat = (a.type||'OTHER').toUpperCase();
+    el.style.display = hiddenCategories.has(cat) ? 'none' : '';
+  });
 }
