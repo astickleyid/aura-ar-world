@@ -380,7 +380,7 @@ function loadTF() {
   <div id="np"><div class="np1"><span id="np-name">ACQUIRING...</span><span id="np-wx" style="margin-left:10px;font-size:8px;color:rgba(0,255,209,.5);font-weight:400"></span></div><div class="np2"><span class="lpip"></span><span id="np-sub">LIVE AR</span></div></div>
   <div id="cw"><div id="ci"><div id="cs"></div><div class="caret"></div></div></div>
   <!-- heading + targets: shown in compass strip only -->
-  <div id="ret" style="pointer-events:all;cursor:crosshair" onclick="reticleTap()" oncontextmenu="event.preventDefault();openTagDialog()" title="Tap to scan · Long-press to tag"><div style="position:relative;width:52px;height:52px"><div class="ri r1"></div><div class="ri r2"></div><div class="rdot"></div><div class="rt rh"></div><div class="rt rh2"></div><div class="rt rv"></div><div class="rt rv2"></div></div></div>
+  <div id="ret" style="pointer-events:all;cursor:crosshair" onclick="reticleTap()" oncontextmenu="event.preventDefault();openTagDialog()" title="Tap: what is that? · Long-press to tag"><div style="position:relative;width:52px;height:52px"><div class="ri r1"></div><div class="ri r2"></div><div class="rdot"></div><div class="rt rh"></div><div class="rt rh2"></div><div class="rt rv"></div><div class="rt rv2"></div></div></div>
   <div id="anc-layer"></div>
 </div>
 
@@ -1436,42 +1436,111 @@ async function tagHere(label, icon) {
 }
 
 // Reticle tap — scan what's directly ahead
+let visionBusy = false;
+
 function reticleTap() {
-  doFlash(); playTone(550, 0.05, 0.1);
-  
-  // Find places within ±20° of current heading, sorted by distance
-  const ahead = places.filter(p => {
-    const diff = Math.abs(bdiff(p.bearing, smoothH));
-    return diff < 20;
-  }).sort((a,b) => a.dist - b.dist);
-  
-  // Also check detected objects
-  const detCount = tracker.objects.size;
-  
-  if (ahead.length === 0 && detCount === 0) {
-    auraSpeak("Nothing ahead. Clear.", true);
-    showToast('Scan: clear ahead');
+  if (visionBusy) return;
+  doFlash(); playTone(660, 0.05, 0.1);
+  identifyWhatsAhead();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// "WHAT'S THAT" — capture camera frame, ask Gemini, speak answer
+// ═══════════════════════════════════════════════════════════════
+async function identifyWhatsAhead() {
+  const camEl = document.getElementById('cam');
+  if (!camEl || camEl.readyState < 2) {
+    auraSpeak("Camera's not ready.", true);
     return;
   }
   
-  // Build scan result
+  visionBusy = true;
+  setVoiceStatus('thinking');
+  showToast('👁 Analyzing...');
+  auraSpeak('Let me have a look.', true);
+  
+  try {
+    // Capture current frame (center-weighted crop for better subject focus)
+    const vw = camEl.videoWidth, vh = camEl.videoHeight;
+    const cnv = document.createElement('canvas');
+    // Downscale to keep payload small (~640px wide) but keep center detail
+    const maxW = 800;
+    const scale = Math.min(1, maxW / vw);
+    cnv.width = vw * scale;
+    cnv.height = vh * scale;
+    const ctx = cnv.getContext('2d');
+    ctx.drawImage(camEl, 0, 0, cnv.width, cnv.height);
+    
+    // Draw a subtle indicator of where the reticle is pointing (center)
+    const jpeg = cnv.toDataURL('image/jpeg', 0.8);
+    
+    // Build context
+    const locName = document.getElementById('np-name')?.textContent || '';
+    const context = {
+      driving: driveMode,
+      location: locName && locName !== 'ACQUIRING...' ? locName : null,
+      heading: degC(smoothH)
+    };
+    
+    // Call vision endpoint
+    const resp = await fetch('/api/vision', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: AbortSignal.timeout(18000),
+      body: JSON.stringify({ image: jpeg, context })
+    });
+    
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({}));
+      if (resp.status === 500 && err.error === 'Vision not configured') {
+        auraSpeak("Vision isn't set up yet. Need an API key.", true);
+      } else {
+        auraSpeak("Couldn't analyze that. Try again.", true);
+      }
+      visionBusy = false;
+      setVoiceStatus('');
+      return;
+    }
+    
+    const data = await resp.json();
+    const answer = data.answer || "Not sure what that is.";
+    
+    setVoiceStatus('speaking');
+    auraSpeak(answer, true);
+    
+    // Also show in the panel if open, or as a toast
+    if (panelOpen) {
+      addMessage('ai', '👁 ' + answer);
+    } else {
+      showToast('👁 ' + answer.slice(0, 60));
+    }
+    
+  } catch(e) {
+    console.warn('Vision failed:', e);
+    if (e.name === 'TimeoutError') {
+      auraSpeak("That took too long. Try again.", true);
+    } else {
+      auraSpeak("Something went wrong there.", true);
+    }
+  }
+  
+  visionBusy = false;
+  setTimeout(() => setVoiceStatus(''), 500);
+}
+
+// Local scan (moved to double-tap or voice "scan")
+function localScanAhead() {
+  const ahead = places.filter(p => Math.abs(bdiff(p.bearing, smoothH)) < 20).sort((a,b) => a.dist - b.dist);
+  const detCount = tracker.objects.size;
+  if (ahead.length === 0 && detCount === 0) {
+    auraSpeak("Nothing ahead. Clear.", true);
+    return;
+  }
   const nearest = ahead[0];
   if (nearest) {
     const ds = fmtDistSpoken(nearest.dist);
     const dir = nearest.bearing > smoothH ? 'slightly right' : nearest.bearing < smoothH ? 'slightly left' : 'straight on';
     auraSpeak(nearest.name + ', ' + ds + ' ' + dir + '.', true);
-    // Open its popup
-    const ancEl = document.getElementById('an-' + nearest.id);
-    if (ancEl && ancEl._detail) openPopup(nearest.id);
-    else showToast(nearest.ico + ' ' + nearest.name + ' — ' + ds);
-  }
-  
-  if (detCount > 0) {
-    const objs = [...tracker.objects.values()].map(o => o.cls).reduce((acc, cls) => {
-      acc[cls] = (acc[cls]||0) + 1; return acc;
-    }, {});
-    const summary = Object.entries(objs).map(([cls,n]) => n > 1 ? n + ' ' + cls + 's' : cls).join(', ');
-    showToast('Detected: ' + summary);
   }
 }
 
@@ -2620,7 +2689,13 @@ function localFallback(cmd) {
     return 'Searching for ' + query + '...';
   }
   
-  // ── What's nearby ──
+  // ── "What's that" / "what am I looking at" → AI VISION ──
+  if (c.match(/what('?s| is) (that|this)/) || c.includes('what am i looking at') || c.includes('identify this') || c.includes('what building') || c.includes('what car') || c.includes('look at this') || c.includes('analyze this')) {
+    identifyWhatsAhead();
+    return 'Let me have a look.';
+  }
+  
+  // ── What's nearby (local scan, not vision) ──
   if (c.includes('near') || c.includes('around') || c.match(/what.*(here|around)/) || c.includes('what do you see') || c.includes('scan')) {
     const top = places.slice(0,4);
     const objs = tracker.objects.size;
