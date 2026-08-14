@@ -23,7 +23,7 @@ const handler = async (req, res) => {
     const situation = context || {};
     const sys = `You are AURA, an AR co-pilot with a British woman's dry wit. You're looking through a camera at what the user is pointing at. Identify the main subject and tell them what's useful about it in 1-2 SHORT spoken sentences. Be specific — not "a building" but "looks like a Chase Bank branch." If it's a business, mention if it seems open. If it's a car, name the make/model. If it's a sign, read it. If it's a landmark, name it. Keep it conversational and brief since this is spoken aloud. Current context: ${situation.driving ? 'user is driving' : 'user is on foot'}${situation.location ? ', near ' + situation.location : ''}.`;
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`;
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${key}`;
     const r = await fetch(geminiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
