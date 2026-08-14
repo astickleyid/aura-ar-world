@@ -29,7 +29,7 @@ const handler = async (req, res) => {
     const r = await fetch(geminiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(22000),
       body: JSON.stringify({
         contents: [{
           parts: [
@@ -37,7 +37,7 @@ const handler = async (req, res) => {
             { inline_data: { mime_type: 'image/jpeg', data: base64 } }
           ]
         }],
-        generationConfig: { temperature: 0.4, maxOutputTokens: 150 }
+        generationConfig: { temperature: 0.4, maxOutputTokens: 200, thinkingConfig: { thinkingBudget: 0 } }
       })
     });
 
