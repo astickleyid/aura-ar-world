@@ -453,6 +453,9 @@ function loadTF() {
     <div class="sp-row"><span>Voice announcements</span><label class="sp-toggle"><input type="checkbox" id="set-voice" checked><span class="sp-slider"></span></label></div>
     <div class="sp-row"><span>Nearby POI cards</span><label class="sp-toggle"><input type="checkbox" id="set-poi" checked><span class="sp-slider"></span></label></div>
     <div class="sp-divider"></div>
+    <div class="sp-row"><span>Trip logging</span><button id="trip-toggle-btn" onclick="tripActive ? endTrip() : startTrip()" style="background:rgba(0,255,209,.1);border:1px solid rgba(0,255,209,.3);border-radius:6px;padding:5px 12px;font-family:'Orbitron',monospace;font-size:8px;letter-spacing:.08em;color:#00FFD1;cursor:pointer">START TRIP</button></div>
+    <div class="sp-row"><span>Export trip log (CSV)</span><button onclick="exportTrips()" style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.15);border-radius:6px;padding:5px 12px;font-family:'Orbitron',monospace;font-size:8px;letter-spacing:.08em;color:rgba(255,255,255,.7);cursor:pointer">EXPORT</button></div>
+    <div class="sp-divider"></div>
     <div class="sp-row"><span>Last sign read</span><span id="sp-lastsign" style="color:rgba(0,255,209,.5);font-size:9px">—</span></div>
   </div>
 </div>
@@ -495,6 +498,22 @@ function loadTF() {
   <button onclick="cancelNav()" style="background:rgba(255,64,64,.08);border:1px solid rgba(255,64,64,.2);
     border-radius:6px;padding:5px 10px;font-family:'DM Mono',monospace;font-size:8px;
     color:rgba(255,64,64,.7);cursor:pointer;letter-spacing:.06em;flex-shrink:0">✕ END</button>
+</div>
+
+<!-- ═══ TRIP BADGE ═══ -->
+<div id="trip-badge" style="display:none;position:fixed;top:42px;left:14px;z-index:6;
+  background:rgba(0,2,10,.4);border:1px solid rgba(0,255,209,.15);border-radius:8px;
+  padding:6px 12px;backdrop-filter:blur(10px);pointer-events:all;cursor:pointer;
+  display:none;align-items:center;gap:10px" onclick="endTrip()">
+  <div style="width:6px;height:6px;border-radius:50%;background:#FF4040;box-shadow:0 0 8px #FF4040;animation:pip 1.2s ease infinite"></div>
+  <div>
+    <div style="display:flex;align-items:baseline;gap:8px">
+      <span id="trip-miles" style="font-family:'Orbitron',monospace;font-size:13px;font-weight:700;color:#00FFD1">0.0</span>
+      <span style="font-size:7px;letter-spacing:.1em;color:rgba(0,255,209,.4)">MI</span>
+      <span id="trip-time" style="font-family:'Orbitron',monospace;font-size:11px;color:rgba(255,255,255,.5)">0m</span>
+    </div>
+    <div style="font-size:7px;letter-spacing:.1em;color:rgba(255,64,64,.5);margin-top:1px">● RECORDING · TAP TO END</div>
+  </div>
 </div>
 
 <!-- ═══ DRIVE MODE HUD BAR ═══ -->
@@ -2024,6 +2043,7 @@ let panelMinimized = false;
 let isThinking = false;
 let lastProactiveAlert = 0;
 let lastSpeedAlert = 0;
+let lastEnforcementAlert = 0;
 let userPreferences = { units: 'imperial', verbosity: 'normal' };
 
 // ── Build live context snapshot for the AI ──────────────────
@@ -2846,8 +2866,37 @@ function localFallback(cmd) {
     return 'No active navigation.';
   }
   
+  // ── TRIP LOGGING ──
+  if ((c.includes('start') && c.includes('trip')) || c.includes('begin trip') || c.includes('clock in') || c.includes('start driving') || c.includes('start shift')) {
+    const labelMatch = c.match(/(?:for|as|called)\s+(.+)/);
+    startTrip(labelMatch ? labelMatch[1].trim() : 'Trip');
+    return 'Trip started. Tracking your miles now.';
+  }
+  if ((c.includes('end') && c.includes('trip')) || c.includes('stop trip') || c.includes('clock out') || c.includes('end shift') || c.includes('finish trip')) {
+    if (tripActive) { endTrip(); return null; } // endTrip speaks the summary
+    return 'No active trip.';
+  }
+  if (c.includes('trip') && (c.includes('summary') || c.includes('total') || c.includes('how many') || c.includes('miles') || c.includes('log'))) {
+    return tripSummaryText();
+  }
+  if (c.includes('export') && (c.includes('trip') || c.includes('mile') || c.includes('log'))) {
+    exportTrips();
+    return 'Exporting your trip log as a spreadsheet.';
+  }
+  
+  // ── Enforcement / cameras ──
+  if (c.includes('speed camera') || c.includes('speed cam') || (c.includes('cop') && c.includes('near')) || c.includes('police near') || c.includes('cameras near') || c.includes('any cops')) {
+    const enforcement = places.filter(p => {
+      const cat = (p.cat||'').toUpperCase();
+      return cat.includes('SPEED CAM') || cat === 'POLICE' || cat === 'SURVEILLANCE';
+    }).sort((a,b) => a.dist - b.dist);
+    if (!enforcement.length) return 'No cameras or police nearby that I can see.';
+    const e = enforcement[0];
+    return e.name + ', ' + fmtDistSpoken(e.dist) + ' ' + degC(e.bearing) + '.';
+  }
+  
   // ── Catch-all ──
-  return 'Try: where\'s the nearest gas station, any cars, how fast, weather, or tag this spot.';
+  return 'Try: nearest gas station, start trip, any speed cameras, how fast, or what\'s that.';
 }
 
 // ── Execute commands detected in AI response ────────────────
@@ -3250,6 +3299,142 @@ function stopVoice() {
 // ═══════════════════════════════════════════════════════════════
 // PROACTIVE ALERTS — AURA speaks up on its own when relevant
 // ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+// ENFORCEMENT WARNING FLASH — big visual for speed cam / police
+// ═══════════════════════════════════════════════════════════════
+function flashEnforcementWarning(label, distM) {
+  let el = document.getElementById('enforce-warn');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'enforce-warn';
+    el.style.cssText = 'position:fixed;top:38%;left:50%;transform:translate(-50%,-50%);z-index:25;pointer-events:none;text-align:center;opacity:0;transition:opacity .3s';
+    document.body.appendChild(el);
+  }
+  el.innerHTML = '<div style="font-family:\'Orbitron\',monospace;font-size:14px;font-weight:900;letter-spacing:.1em;color:#FF4040;text-shadow:0 0 20px rgba(255,64,64,.6);margin-bottom:6px">⚠ ' + label + ' AHEAD</div><div style="font-family:\'Orbitron\',monospace;font-size:24px;font-weight:700;color:#FFD700;text-shadow:0 0 16px rgba(255,215,0,.5)">' + fmtDist(distM) + '</div>';
+  el.style.opacity = '1';
+  playTone(880, 0.06, 0.15);
+  setTimeout(() => playTone(880, 0.06, 0.15), 200);
+  setTimeout(() => { el.style.opacity = '0'; }, 4000);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TRIP LOGGING — track drives for rideshare/delivery/mileage
+// ═══════════════════════════════════════════════════════════════
+let tripActive = false;
+let currentTrip = null;
+let tripPollTimer = null;
+
+function startTrip(label) {
+  if (tripActive) { showToast('Trip already running'); return; }
+  currentTrip = {
+    id: Date.now(),
+    label: label || 'Trip',
+    startTime: Date.now(),
+    startLat: uLat, startLon: uLon,
+    startAddress: document.getElementById('np-name')?.textContent || 'Unknown',
+    points: [{ lat: uLat, lon: uLon, t: Date.now(), speed: speedMph }],
+    distanceMeters: 0,
+    maxSpeed: 0,
+    events: [],
+    endTime: null
+  };
+  tripActive = true;
+  tripPollTimer = setInterval(() => {
+    if (!tripActive || !currentTrip) return;
+    const last = currentTrip.points[currentTrip.points.length - 1];
+    const segDist = hav(last.lat, last.lon, uLat, uLon);
+    if (segDist > 5) {
+      currentTrip.distanceMeters += segDist;
+      currentTrip.points.push({ lat: uLat, lon: uLon, t: Date.now(), speed: speedMph });
+      if (speedMph > currentTrip.maxSpeed) currentTrip.maxSpeed = Math.round(speedMph);
+    }
+    updateTripUI();
+  }, 4000);
+  updateTripUI();
+  auraSpeak('Trip started. Tracking now.', true);
+  showToast('🚗 Trip started');
+}
+
+function endTrip() {
+  if (!tripActive || !currentTrip) { showToast('No active trip'); return; }
+  currentTrip.endTime = Date.now();
+  currentTrip.endLat = uLat;
+  currentTrip.endLon = uLon;
+  currentTrip.endAddress = document.getElementById('np-name')?.textContent || 'Unknown';
+  if (tripPollTimer) clearInterval(tripPollTimer);
+  const trips = JSON.parse(localStorage.getItem('aura_trips') || '[]');
+  const sparse = currentTrip.points.filter((_, i) => i % 3 === 0);
+  trips.push({ ...currentTrip, points: sparse });
+  localStorage.setItem('aura_trips', JSON.stringify(trips.slice(-100)));
+  const miles = (currentTrip.distanceMeters / 1609.344).toFixed(1);
+  const mins = Math.round((currentTrip.endTime - currentTrip.startTime) / 60000);
+  tripActive = false;
+  auraSpeak('Trip logged. ' + miles + ' miles, ' + mins + ' minutes.', true);
+  showToast('✓ ' + miles + ' mi · ' + mins + ' min');
+  updateTripUI();
+  currentTrip = null;
+}
+
+function logTripEvent(type, data) {
+  if (tripActive && currentTrip) {
+    currentTrip.events.push({ type, ...data, t: Date.now(), lat: uLat, lon: uLon });
+  }
+}
+
+function updateTripUI() {
+  const badge = document.getElementById('trip-badge');
+  const btn = document.getElementById('trip-toggle-btn');
+  if (btn) btn.textContent = tripActive ? 'END TRIP' : 'START TRIP';
+  if (!badge) return;
+  if (tripActive && currentTrip) {
+    badge.style.display = 'flex';
+    const miles = (currentTrip.distanceMeters / 1609.344).toFixed(1);
+    const mins = Math.round((Date.now() - currentTrip.startTime) / 60000);
+    document.getElementById('trip-miles').textContent = miles;
+    document.getElementById('trip-time').textContent = mins + 'm';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+function getTripHistory() {
+  try { return JSON.parse(localStorage.getItem('aura_trips') || '[]'); }
+  catch(e) { return []; }
+}
+
+function tripSummaryText() {
+  const trips = getTripHistory();
+  if (!trips.length) return 'No trips logged yet. Say start trip to begin.';
+  const totalMi = trips.reduce((s,t) => s + t.distanceMeters/1609.344, 0);
+  const today = new Date().setHours(0,0,0,0);
+  const todayTrips = trips.filter(t => t.startTime >= today);
+  const todayMi = todayTrips.reduce((s,t) => s + t.distanceMeters/1609.344, 0);
+  return 'You\'ve logged ' + trips.length + ' trips, ' + totalMi.toFixed(1) + ' total miles. Today: ' + todayTrips.length + ' trips, ' + todayMi.toFixed(1) + ' miles.';
+}
+
+function exportTrips() {
+  const trips = getTripHistory();
+  if (!trips.length) { showToast('No trips to export'); return; }
+  let csv = 'Date,Label,Start,End,Miles,Minutes,Max MPH,Events\n';
+  for (const t of trips) {
+    const date = new Date(t.startTime).toLocaleDateString('en-US');
+    const start = new Date(t.startTime).toLocaleTimeString('en-US', {hour:'numeric',minute:'2-digit'});
+    const end = t.endTime ? new Date(t.endTime).toLocaleTimeString('en-US', {hour:'numeric',minute:'2-digit'}) : '';
+    const miles = (t.distanceMeters/1609.344).toFixed(1);
+    const mins = t.endTime ? Math.round((t.endTime-t.startTime)/60000) : '';
+    const events = (t.events||[]).length;
+    csv += date + ',"' + t.label + '","' + (t.startAddress||'').replace(/"/g,'') + '","' + (t.endAddress||'').replace(/"/g,'') + '",' + miles + ',' + mins + ',' + (t.maxSpeed||'') + ',' + events + '\n';
+  }
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'aura-trips-' + new Date().toISOString().slice(0,10) + '.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('✓ Exported ' + trips.length + ' trips');
+}
+
 function checkProactiveAlerts() {
   const now = Date.now();
   
@@ -3280,15 +3465,44 @@ function checkProactiveAlerts() {
     }
   }
   
-  // Approaching a notable place (within 50m)
-  const veryClose = places.filter(p => p.dist < 50 && !p._announced && (p.cat !== 'TRAFFIC'));
-  if (veryClose.length && now - lastProactiveAlert > 20000) {
-    const p = veryClose[0];
-    p._announced = true;
-    lastProactiveAlert = now;
-    auraSpeak('That\'s ' + p.name + ' just there, by the way.', false);
+  // ═══ SPEED CAMERA / POLICE AHEAD (drive mode) ═══
+  // Warns when enforcement is ahead in your direction of travel
+  if (driveMode && auraSettings.speedlimit && auraSettings.voice && now - lastEnforcementAlert > 25000) {
+    const enforcement = places.filter(p => {
+      const cat = (p.cat || '').toUpperCase();
+      const isEnforcement = cat.includes('SPEED CAM') || cat === 'POLICE' || 
+                            (cat === 'SURVEILLANCE' && (p.type === 'speed_camera' || p.tags?.['enforcement']));
+      if (!isEnforcement) return false;
+      // Must be AHEAD — within 45° of heading — and within warning distance
+      const bearingDiff = Math.abs(bdiff(p.bearing, smoothH));
+      const ahead = bearingDiff < 50;
+      // Warning distance scales with speed — faster = warn earlier
+      const warnDist = Math.max(300, speedMph * 20); // ~feet-equivalent in meters, tuned
+      return ahead && p.dist < warnDist && p.dist > 40 && !p._enforcementAnnounced;
+    }).sort((a,b) => a.dist - b.dist);
+    
+    if (enforcement.length) {
+      const e = enforcement[0];
+      e._enforcementAnnounced = true;
+      lastEnforcementAlert = now;
+      const cat = (e.cat || '').toUpperCase();
+      const distStr = fmtDistSpoken(e.dist);
+      let msg;
+      if (cat.includes('SPEED CAM')) {
+        msg = 'Speed camera ahead, ' + distStr + '. Mind your speed.';
+      } else if (cat === 'POLICE') {
+        msg = 'Police station coming up on your route, ' + distStr + '.';
+      } else {
+        msg = 'Surveillance ahead, ' + distStr + '.';
+      }
+      auraSpeak(msg, true);
+      // Big visual flash on the drive HUD
+      flashEnforcementWarning(cat.includes('SPEED CAM') ? 'SPEED CAMERA' : cat === 'POLICE' ? 'POLICE' : 'CAMERA', e.dist);
+      if (tripActive) logTripEvent('enforcement', { type: cat, dist: Math.round(e.dist) });
+    }
   }
-}
+  
+
 
 // ════════ boot.js ════════
 // AURA Boot Sequence
