@@ -243,6 +243,69 @@ html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'DM
   opacity:0;pointer-events:none;transition:opacity .3s;white-space:nowrap;max-width:70vw;overflow:hidden;text-overflow:ellipsis;
 }
 #voice-caption.on{opacity:1}
+
+/* ── SETTINGS BUTTON + PANEL ── */
+#settings-btn{
+  position:fixed;top:60px;right:78px;z-index:5;
+  background:rgba(0,2,10,.25);border:1px solid rgba(0,255,209,.08);
+  border-radius:6px;width:30px;height:26px;cursor:pointer;
+  font-size:13px;color:rgba(0,255,209,.6);backdrop-filter:blur(8px);
+  pointer-events:all;display:flex;align-items:center;justify-content:center;
+}
+#settings-panel{
+  position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(.95);
+  width:min(320px,90vw);z-index:30;
+  background:rgba(0,2,10,.9);border:1px solid rgba(0,255,209,.2);
+  border-radius:14px;backdrop-filter:blur(30px) saturate(150%);
+  box-shadow:0 16px 60px rgba(0,0,0,.8);
+  opacity:0;pointer-events:none;transition:all .28s cubic-bezier(.34,1.1,.64,1);
+  overflow:hidden;
+}
+#settings-panel.on{opacity:1;pointer-events:all;transform:translate(-50%,-50%) scale(1)}
+.sp-header{
+  padding:14px 16px;border-bottom:1px solid rgba(0,255,209,.1);
+  display:flex;align-items:center;justify-content:space-between;
+  font-family:var(--disp);font-size:10px;font-weight:700;letter-spacing:.14em;color:var(--c);
+}
+.sp-close{background:none;border:none;color:rgba(255,255,255,.4);font-size:14px;cursor:pointer;padding:2px 6px}
+.sp-body{padding:8px 16px 16px}
+.sp-row{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:11px 0;font-size:12px;color:rgba(255,255,255,.75);letter-spacing:.02em;
+  border-bottom:1px solid rgba(255,255,255,.03);
+}
+.sp-divider{height:1px;background:rgba(0,255,209,.08);margin:8px 0}
+.sp-toggle{position:relative;display:inline-block;width:38px;height:20px;cursor:pointer;flex-shrink:0}
+.sp-toggle input{opacity:0;width:0;height:0}
+.sp-slider{
+  position:absolute;inset:0;background:rgba(255,255,255,.1);
+  border:1px solid rgba(255,255,255,.15);border-radius:20px;transition:.25s;
+}
+.sp-slider:before{
+  content:'';position:absolute;height:14px;width:14px;left:2px;bottom:2px;
+  background:rgba(255,255,255,.6);border-radius:50%;transition:.25s;
+}
+.sp-toggle input:checked+.sp-slider{background:rgba(0,255,209,.25);border-color:rgba(0,255,209,.4)}
+.sp-toggle input:checked+.sp-slider:before{transform:translateX(18px);background:var(--c)}
+
+/* ── RESPONSIVE LANDSCAPE (dash mount) ── */
+@media (orientation:landscape) and (max-height:500px){
+  /* Drive HUD spreads across bottom, bigger speed */
+  #drive-hud{padding:8px 24px 10px!important}
+  #dh-speed{font-size:44px!important}
+  /* Move nav bar out of the way */
+  #nav-bar{top:8px!important}
+  /* Reticle smaller in landscape */
+  #ret{transform:translate(-50%,-50%) scale(.8)}
+  /* Speed cluster top-left corner */
+  #speed-cluster{bottom:auto!important;top:8px!important;left:8px!important}
+  /* Voice panel narrower */
+  #voice-panel{max-height:70vh!important;bottom:56px!important}
+  /* Weather + location pill smaller */
+  #np{padding:4px 14px 5px!important}
+  /* Settings panel fits landscape */
+  #settings-panel{max-height:85vh;overflow-y:auto}
+}
 /* ── INCIDENT FEED ── */
 .incident-anc .adot{border-color:#FF4040;background:rgba(255,64,64,.15);box-shadow:0 0 20px rgba(255,64,64,.5);animation:incpulse 1.5s ease infinite}
 @keyframes incpulse{0%,100%{box-shadow:0 0 12px rgba(255,64,64,.5)}50%{box-shadow:0 0 28px rgba(255,64,64,.8),0 0 55px rgba(255,64,64,.2)}}
@@ -300,6 +363,7 @@ function loadTF() {
 <link href="https://api.mapbox.com/mapbox-gl-js/v3.9.3/mapbox-gl.css" rel="stylesheet">
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.9.3/mapbox-gl.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@turf/turf@7/turf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 </head>
 <body>
 <!-- ═══ CAMERA LAYER ═══ -->
@@ -370,6 +434,28 @@ function loadTF() {
 
 <!-- ═══ VISION MODE BUTTON ═══ -->
 <button id="vision-mode-btn" onclick="cycleVisionMode()">👁 NORMAL</button>
+
+<!-- ═══ SETTINGS BUTTON ═══ -->
+<button id="settings-btn" onclick="toggleSettings()">⚙</button>
+
+<!-- ═══ ALERT SETTINGS PANEL ═══ -->
+<div id="settings-panel">
+  <div class="sp-header">
+    <span>ALERT SETTINGS</span>
+    <button onclick="toggleSettings()" class="sp-close">✕</button>
+  </div>
+  <div class="sp-body">
+    <div class="sp-row"><span>Speed limit warnings</span><label class="sp-toggle"><input type="checkbox" id="set-speedlimit" checked><span class="sp-slider"></span></label></div>
+    <div class="sp-row"><span>Collision warnings</span><label class="sp-toggle"><input type="checkbox" id="set-collision" checked><span class="sp-slider"></span></label></div>
+    <div class="sp-row"><span>Proximity beeps</span><label class="sp-toggle"><input type="checkbox" id="set-beeps" checked><span class="sp-slider"></span></label></div>
+    <div class="sp-row"><span>Incident alerts</span><label class="sp-toggle"><input type="checkbox" id="set-incidents" checked><span class="sp-slider"></span></label></div>
+    <div class="sp-row"><span>Sign reading (OCR)</span><label class="sp-toggle"><input type="checkbox" id="set-ocr" checked><span class="sp-slider"></span></label></div>
+    <div class="sp-row"><span>Voice announcements</span><label class="sp-toggle"><input type="checkbox" id="set-voice" checked><span class="sp-slider"></span></label></div>
+    <div class="sp-row"><span>Nearby POI cards</span><label class="sp-toggle"><input type="checkbox" id="set-poi" checked><span class="sp-slider"></span></label></div>
+    <div class="sp-divider"></div>
+    <div class="sp-row"><span>Last sign read</span><span id="sp-lastsign" style="color:rgba(0,255,209,.5);font-size:9px">—</span></div>
+  </div>
+</div>
 
 <!-- ═══ SYSTEM STATUS PANEL ═══ -->
 <!-- SYS PANEL: removed — diagnostics available via voice command "status" -->
@@ -906,6 +992,11 @@ function startDetectionLoop() {
       const tracked = tracker.update(filtered);
       drawTracked(tracked, camEl.videoWidth, camEl.videoHeight);
       drawARRoute(); // AR navigation overlay
+      // OCR every ~2.5s when driving (reads speed limit signs)
+      if (driveMode && auraSettings.ocr && ts - ocrLastRun > 2500) {
+        ocrLastRun = ts;
+        runOCR();
+      }
     } catch(e) { /* busy */ }
   }
   requestAnimationFrame(detectFrame);
@@ -1506,7 +1597,7 @@ function playTone(f,g,d){if(!audioCtx)return;try{const o=audioCtx.createOscillat
 // ── Collision proximity beep — faster beeps as vehicles get closer ──
 let lastProximityBeep = 0;
 function checkProximityBeep() {
-  if (!driveMode || !audioCtx) return;
+  if (!driveMode || !audioCtx || !auraSettings.beeps) return;
   const now = Date.now();
   let closestVehicleFt = Infinity;
   
@@ -2004,6 +2095,132 @@ CRITICAL RULES:
 
 // Boot greeting — sets the tone immediately
 const AURA_BOOT_GREETING = "Right. I'm online. Everything's looking normal.";
+
+// ═══════════════════════════════════════════════════════════════
+// SETTINGS — alert toggles, persisted to localStorage
+// ═══════════════════════════════════════════════════════════════
+const auraSettings = {
+  speedlimit: true, collision: true, beeps: true,
+  incidents: true, ocr: true, voice: true, poi: true
+};
+
+function loadSettings() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('aura_settings') || '{}');
+    Object.assign(auraSettings, saved);
+  } catch(e) {}
+  // Reflect in UI
+  for (const key of Object.keys(auraSettings)) {
+    const el = document.getElementById('set-' + key);
+    if (el) {
+      el.checked = auraSettings[key];
+      el.onchange = () => {
+        auraSettings[key] = el.checked;
+        localStorage.setItem('aura_settings', JSON.stringify(auraSettings));
+        showToast(key + ' ' + (el.checked ? 'on' : 'off'));
+      };
+    }
+  }
+}
+
+function toggleSettings() {
+  const p = document.getElementById('settings-panel');
+  if (p) p.classList.toggle('on');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// OCR — read speed limit signs and text from the camera feed
+// ═══════════════════════════════════════════════════════════════
+let ocrWorker = null;
+let ocrBusy = false;
+let ocrLastRun = 0;
+let cameraReadSpeedLimit = null; // speed limit read from an actual sign
+let cameraReadSpeedLimitTime = 0;
+
+async function initOCR() {
+  try {
+    ocrWorker = await Tesseract.createWorker('eng', 1, {
+      // Minimal — just recognize
+    });
+    // Restrict to characters useful for signs (numbers + common words)
+    await ocrWorker.setParameters({
+      tessedit_char_whitelist: '0123456789SPEEDLIMTOSTPYIELDNWEHXbasemph ',
+    });
+    console.log('OCR ready');
+  } catch(e) {
+    console.warn('OCR init failed:', e);
+  }
+}
+
+// Capture center region of camera and OCR it for signs
+async function runOCR() {
+  if (!ocrWorker || ocrBusy || !auraSettings.ocr) return;
+  const camEl = document.getElementById('cam');
+  if (!camEl || camEl.readyState < 2) return;
+  
+  ocrBusy = true;
+  try {
+    const vw = camEl.videoWidth, vh = camEl.videoHeight;
+    if (!vw) { ocrBusy = false; return; }
+    
+    // Capture upper-right region where speed limit signs usually appear
+    const cnv = document.createElement('canvas');
+    const cropW = Math.floor(vw * 0.4), cropH = Math.floor(vh * 0.4);
+    cnv.width = cropW; cnv.height = cropH;
+    const ctx = cnv.getContext('2d');
+    // Upper-right quadrant
+    ctx.drawImage(camEl, vw * 0.55, vh * 0.1, cropW, cropH, 0, 0, cropW, cropH);
+    
+    const { data } = await ocrWorker.recognize(cnv);
+    const text = (data.text || '').trim();
+    
+    if (text) {
+      processOCRText(text);
+    }
+  } catch(e) {
+    console.warn('OCR run failed:', e);
+  }
+  ocrBusy = false;
+}
+
+function processOCRText(text) {
+  const upper = text.toUpperCase();
+  
+  // Speed limit detection — "SPEED LIMIT 45" or just isolated 2-digit number near "LIMIT"
+  const speedMatch = upper.match(/(?:SPEED\s*LIMIT|LIMIT)\s*(\d{2})/) || 
+                     (upper.includes('SPEED') && upper.match(/\b(\d{2})\b/));
+  if (speedMatch) {
+    const limit = parseInt(speedMatch[1]);
+    // Sanity check — US speed limits are 5-85
+    if (limit >= 5 && limit <= 85 && limit % 5 === 0) {
+      cameraReadSpeedLimit = limit;
+      cameraReadSpeedLimitTime = Date.now();
+      // This becomes the authoritative speed limit
+      if (!trafficData) trafficData = {};
+      trafficData.speedLimitMph = limit;
+      trafficData.speedLimitSource = 'camera';
+      window._lastSpeedLimit = limit;
+      
+      const signEl = document.getElementById('sp-lastsign');
+      if (signEl) signEl.textContent = 'SPEED LIMIT ' + limit;
+      
+      // Announce if voice on and it's a change
+      if (auraSettings.voice && auraSettings.speedlimit && limit !== window._announcedLimit) {
+        window._announcedLimit = limit;
+        // Only announce if we're actually driving
+        if (driveMode) auraSpeak('Speed limit ' + limit + '.', false);
+      }
+    }
+  }
+  
+  // Stop sign
+  if (upper.includes('STOP') && upper.length < 12) {
+    const signEl = document.getElementById('sp-lastsign');
+    if (signEl) signEl.textContent = 'STOP SIGN';
+  }
+}
+
+
 
 // ── Claude API Call ──────────────────────────────────────────
 async function callAuraAI(userMessage) {
@@ -2962,7 +3179,7 @@ function checkProactiveAlerts() {
   const now = Date.now();
   
   // Speed warning — over limit by 10+
-  if (trafficData?.speedLimitMph && speedMph > trafficData.speedLimitMph + 10 && now - lastSpeedAlert > 30000) {
+  if (auraSettings.speedlimit && auraSettings.voice && trafficData?.speedLimitMph && speedMph > trafficData.speedLimitMph + 10 && now - lastSpeedAlert > 30000) {
     lastSpeedAlert = now;
     const over = Math.round(speedMph - trafficData.speedLimitMph);
     const road = trafficData.roadName || 'this road';
@@ -2977,7 +3194,7 @@ function checkProactiveAlerts() {
   }
   
   // New incident alert
-  if (incidents.length && now - lastProactiveAlert > 60000) {
+  if (auraSettings.incidents && incidents.length && now - lastProactiveAlert > 60000) {
     const close = incidents.filter(i => hav(uLat,uLon,i.lat,i.lon) < 500);
     if (close.length) {
       lastProactiveAlert = now;
@@ -3034,6 +3251,8 @@ async function boot(){
   await dl(700);
   const b=document.getElementById('boot');b.style.transition='opacity .8s';b.style.opacity='0';
   setTimeout(()=>{b.style.display='none';buildCompass();initDrag();initVoice();startLoop();
+    loadSettings();
+    initOCR();
     fetchIncidents();
     setInterval(fetchIncidents, 120000); // refresh every 2 min
     setInterval(updateSysPanel, 3000);   // sys panel every 3s
